@@ -40,30 +40,24 @@ def generate_music_30sec():
     seed_file = "/Users/davidkeeler/data/music/musicnet/test_data/2416.wav"
     output_dir = "/Users/davidkeeler/data/music/model_out"
     
-    # Create model with final stage parameters (256 sequence length)
+    # Create model with current training parameters
     print("Creating model...")
-    model = AudioTransformerFreq(d_model=128, num_blocks=2, freq_bins=513, seq_len=256)
+    model = AudioTransformerFreq(d_model=128, num_blocks=1, freq_bins=513, seq_len=16)
     
     # Build model by running a dummy forward pass
-    dummy_real = tf.random.normal((1, 256, 513))
-    dummy_imag = tf.random.normal((1, 256, 513))
+    dummy_real = tf.random.normal((1, 16, 513))
+    dummy_imag = tf.random.normal((1, 16, 513))
     dummy_input = tf.complex(dummy_real, dummy_imag)
     _ = model(dummy_input)
     
-    # Load weights from final checkpoint
+    # Load weights from current checkpoint
     print("Loading weights...")
     try:
-        model.load_weights(os.path.join(checkpoint_dir, "curriculum_final.keras"))
-        print("Loaded weights from curriculum_final.keras")
-    except:
-        # Try latest stage 4 checkpoint
-        stage4_files = [f for f in os.listdir(checkpoint_dir) if f.startswith("stage_4_epoch_")]
-        if stage4_files:
-            latest_stage4 = max(stage4_files, key=lambda x: int(x.split('_')[-1].split('.')[0]))
-            model.load_weights(os.path.join(checkpoint_dir, latest_stage4))
-            print(f"Loaded weights from {latest_stage4}")
-        else:
-            raise Exception("No suitable checkpoint found")
+        model.load_weights(os.path.join(checkpoint_dir, "curriculum_weights.weights.h5"))
+        print("Loaded weights from curriculum_weights.weights.h5")
+    except Exception as e:
+        print(f"Could not load weights: {e}")
+        raise Exception("No suitable checkpoint found")
     
     # Load seed audio
     print("Loading seed audio...")
@@ -101,7 +95,7 @@ def generate_music_30sec():
         logits = model(context_batch, training=False)[0, -1:, :]  # Get last frame
         
         # Apply temperature scaling
-        temperature = 0.8
+        temperature = 0.3
         magnitude = tf.abs(logits)
         phase = tf.math.angle(logits)
         
@@ -110,14 +104,10 @@ def generate_music_30sec():
         scaled_log_magnitude = log_magnitude / temperature
         scaled_magnitude = tf.exp(scaled_log_magnitude)
         
-        # Add noise to phase
-        phase_noise = tf.random.normal(tf.shape(phase), stddev=temperature * 0.1)
-        noisy_phase = phase + phase_noise
-        
         # Clip magnitude to prevent explosion
         clipped_magnitude = tf.clip_by_value(scaled_magnitude, 0.0, 20.0)
-        next_frame = tf.complex(clipped_magnitude * tf.cos(noisy_phase), 
-                               clipped_magnitude * tf.sin(noisy_phase))
+        next_frame = tf.complex(clipped_magnitude * tf.cos(phase), 
+                               clipped_magnitude * tf.sin(phase))
         
         # Append to generated frames
         generated_frames.append(next_frame[0])
