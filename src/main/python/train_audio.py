@@ -8,8 +8,58 @@ from datetime import datetime
 from tqdm import tqdm
 
 
+def get_latest_checkpoint(checkpoint_dir):
+    """Find the most recently created checkpoint file"""
+    if not os.path.exists(checkpoint_dir):
+        return None
+    
+    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith('.weights.h5')]
+    if not checkpoint_files:
+        return None
+    
+    # Get full paths and sort by modification time
+    full_paths = [os.path.join(checkpoint_dir, f) for f in checkpoint_files]
+    latest_checkpoint = max(full_paths, key=os.path.getmtime)
+    return latest_checkpoint
+
+
 def magnitude_spectral_loss(y_true, y_pred):
-    return tf.reduce_mean(tf.square(tf.abs(y_true - y_pred)))
+    # Use MSE on magnitudes instead of complex difference
+    mag_true = tf.abs(y_true)
+    mag_pred = tf.abs(y_pred)
+    return tf.reduce_mean(tf.square(mag_true - mag_pred))
+
+
+def phase_loss(y_true, y_pred):
+    """Phase consistency loss using cosine distance"""
+    # Get magnitudes and add epsilon for stability
+    mag_true = tf.abs(y_true) + 1e-8
+    mag_pred = tf.abs(y_pred) + 1e-8
+    
+    # Normalize to unit circle
+    y_true_norm = y_true / tf.cast(mag_true, tf.complex64)
+    y_pred_norm = y_pred / tf.cast(mag_pred, tf.complex64)
+    
+    # Phase difference using normalized complex multiplication
+    phase_diff = y_true_norm * tf.math.conj(y_pred_norm)
+    
+    # Use real part (cosine of phase difference)
+    cos_phase_diff = tf.math.real(phase_diff)
+    
+    # Clamp for stability
+    cos_phase_diff = tf.clip_by_value(cos_phase_diff, -0.999, 0.999)
+    
+    # Phase loss: 1 - mean cosine similarity
+    return 1.0 - tf.reduce_mean(cos_phase_diff)
+
+
+def combined_loss(y_true, y_pred, magnitude_weight=1.0, phase_weight=0.0):
+    """Combined magnitude and phase loss - temporarily disable phase loss"""
+    mag_loss = magnitude_spectral_loss(y_true, y_pred)
+    if phase_weight > 0:
+        ph_loss = phase_loss(y_true, y_pred)
+        return magnitude_weight * mag_loss + phase_weight * ph_loss
+    return magnitude_weight * mag_loss
 
 
 def load_full_audio(file_path, sr=22050):
@@ -26,7 +76,13 @@ def load_full_audio(file_path, sr=22050):
 
 
 def audio_to_stft(audio, frame_length=1024, frame_step=256):
-    return tf.signal.stft(audio, frame_length=frame_length, frame_step=frame_step)
+    stft = tf.signal.stft(audio, frame_length=frame_length, frame_step=frame_step)
+    # Replace any NaN or infinite values in real and imaginary parts
+    real_part = tf.math.real(stft)
+    imag_part = tf.math.imag(stft)
+    real_part = tf.where(tf.math.is_finite(real_part), real_part, 0.0)
+    imag_part = tf.where(tf.math.is_finite(imag_part), imag_part, 0.0)
+    return tf.complex(real_part, imag_part)
 
 
 def stft_to_audio(stft, frame_length=1024, frame_step=256):
@@ -66,7 +122,16 @@ def train_step(model, optimizer, x, y):
     with tf.GradientTape() as tape:
         pred = model(x, training=True)
         loss = magnitude_spectral_loss(y, pred)
+        
+        # Check for NaN in predictions
+        if tf.reduce_any(tf.math.is_nan(tf.abs(pred))):
+            tf.print("NaN detected in model output!")
+            
     grads = tape.gradient(loss, model.trainable_variables)
+    
+    # Clip gradients to prevent explosion
+    grads = [tf.clip_by_norm(g, 1.0) if g is not None else g for g in grads]
+    
     optimizer.apply_gradients(zip(grads, model.trainable_variables))
     return loss
 
@@ -83,15 +148,20 @@ def train_curriculum():
     stft_segment = audio_to_stft(audio_segment)
     print(f"Audio length: {len(audio_segment)} samples")
     print(f"STFT shape: {stft_segment.shape}")
+    
+    real_nan = tf.reduce_sum(tf.cast(~tf.math.is_finite(tf.math.real(stft_segment)), tf.int32))
+    imag_nan = tf.reduce_sum(tf.cast(~tf.math.is_finite(tf.math.imag(stft_segment)), tf.int32))
+    print(f"NaN/Inf values in STFT real: {real_nan.numpy()}, imag: {imag_nan.numpy()}")
+    if real_nan > 0 or imag_nan > 0:
+        print("WARNING: Input data contains NaN/Inf values!")
 
     stages = [
-        (16, 20, 5e-5),
-        (32, 20, 5e-5),
-        (64, 20, 5e-5),
-        (128, 20, 5e-5),
-        (256, 20, 5e-5),
-        (512, 20, 5e-5),
-        (1024, 20, 5e-5),
+        (32, 30, 1e-3),
+        (64, 30, 1e-3),
+        (128, 30, 1e-3),
+        (256, 30, 1e-3),
+        (512, 30, 1e-3),
+        (1024, 30, 1e-3),
     ]
 
     model = None
@@ -105,16 +175,23 @@ def train_curriculum():
         new_model(dummy_input)
 
         if model is not None:
-            safe_transfer_weights(model, new_model)
-        elif os.path.exists(checkpoint_path):
-            try:
-                new_model.load_weights(checkpoint_path)
-                print("Loaded existing weights.")
-            except Exception as e:
-                print(f"Failed to load weights: {e}")
+            # safe_transfer_weights(model, new_model)  # Disable for debugging
+            pass
+        else:
+            # Load most recent checkpoint
+            latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
+            if latest_checkpoint:
+                try:
+                    new_model.load_weights(latest_checkpoint)
+                    print(f"Loaded weights from: {os.path.basename(latest_checkpoint)}")
+                except Exception as e:
+                    print(f"Failed to load weights: {e}")
+                    print("Starting with fresh weights")
+            else:
+                print("No existing checkpoints found.")
 
         model = new_model
-        optimizer = tf.keras.optimizers.Adam(lr)
+        optimizer = tf.keras.optimizers.Adam(lr, clipnorm=1.0)
         dataset = create_teacher_forcing_dataset(stft_segment, seq_len, batch_size=8)
 
         for epoch in range(epochs):

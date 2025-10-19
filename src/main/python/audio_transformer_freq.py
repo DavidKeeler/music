@@ -8,11 +8,11 @@ warnings.filterwarnings('ignore', category=UserWarning, module='tensorflow')
 
 
 @tf.function
-def modrelu(z, bias):
-    abs_z = tf.abs(z)
-    scale = tf.nn.relu(abs_z + bias) / (abs_z + 1e-6)
-    scale = tf.cast(scale, tf.complex64)
-    return scale * z
+def complex_relu(z):
+    """Simple complex activation - apply ReLU to real and imaginary parts separately"""
+    real_part = tf.nn.relu(tf.math.real(z))
+    imag_part = tf.nn.relu(tf.math.imag(z))
+    return tf.complex(real_part, imag_part)
 
 
 class ComplexDense(Layer):
@@ -43,15 +43,13 @@ class ComplexDense(Layer):
         z = tf.complex(real, imag)
         if self.use_bias:
             z = z + tf.cast(self.b, tf.complex64)
-            bias_val = tf.cast(self.b, tf.float32)
-        else:
-            bias_val = 0.0
-        return modrelu(z, bias_val)
+        return complex_relu(z)
 
 
 class ComplexMultiHeadAttention(Layer):
     def __init__(self, d_model, num_heads, **kwargs):
         super().__init__(**kwargs)
+        assert d_model % num_heads == 0
         self.d_model = d_model
         self.num_heads = num_heads
         self.depth = d_model // num_heads
@@ -61,70 +59,69 @@ class ComplexMultiHeadAttention(Layer):
         self.wv = ComplexDense(d_model)
         self.dense = ComplexDense(d_model)
         
-    def call(self, q, k, v, mask=None):
-        batch_size = tf.shape(q)[0]
+    def split_heads(self, x):
+        batch_size = tf.shape(x)[0]
+        x = tf.reshape(x, [batch_size, -1, self.num_heads, self.depth])
+        return tf.transpose(x, [0, 2, 1, 3])  # (B, H, T, D)
         
+    def call(self, v, k, q, mask=None):
         q = self.wq(q)
         k = self.wk(k)
         v = self.wv(v)
         
-        # Reshape for multi-head
-        q = tf.reshape(q, [batch_size, -1, self.num_heads, self.depth])
-        k = tf.reshape(k, [batch_size, -1, self.num_heads, self.depth])
-        v = tf.reshape(v, [batch_size, -1, self.num_heads, self.depth])
+        q = self.split_heads(q)
+        k = self.split_heads(k)
+        v = self.split_heads(v)
         
-        # Transpose for attention computation
-        q = tf.transpose(q, [0, 2, 1, 3])  # [batch, heads, seq, depth]
-        k = tf.transpose(k, [0, 2, 1, 3])
-        v = tf.transpose(v, [0, 2, 1, 3])
+        # scaled dot-product with real scaling factor
+        dk = tf.cast(tf.shape(k)[-1], tf.float32)
+        scores = tf.matmul(q, k, transpose_b=True) / tf.cast(tf.sqrt(dk), tf.complex64)  # (B, H, T, T)
         
-        # Complex attention scores
-        scores = tf.matmul(q, k, transpose_b=True)
-        scores = scores / tf.cast(tf.sqrt(tf.cast(self.depth, tf.float32)), tf.complex64)
-        
-        # Apply causal mask if provided
-        # if mask is not None:
-        #     # Convert boolean mask to float and apply to real part of scores
-        #     mask_value = tf.where(mask, 0.0, -1e9)
-        #     mask_value = tf.cast(mask_value, tf.complex64)
-        #     scores = scores + mask_value
-
+        # --- causal mask application ---
         if mask is not None:
-            # Reshape mask to broadcast over batch and head dimensions
-            mask = tf.reshape(mask, [1, 1, tf.shape(mask)[0], tf.shape(mask)[1]])
-            # Use boolean mask directly (True = keep, False = mask out)
-            scores = tf.where(mask, scores, tf.complex(tf.fill(tf.shape(scores), -1e9), 0.0))
-
-        # Softmax on magnitude, preserve relative phase
-        attention_weights = tf.nn.softmax(tf.abs(scores), axis=-1)
-        attention_weights = tf.cast(attention_weights, tf.complex64)
+            mask = tf.reshape(tf.cast(mask, tf.float32), [1, 1, tf.shape(mask)[0], tf.shape(mask)[1]])
+            # zero out disallowed attention weights
+            masked_scores = tf.where(mask > 0, tf.abs(scores), tf.zeros_like(tf.abs(scores)))
+        else:
+            masked_scores = tf.abs(scores)
+            
+        attn_weights = tf.nn.softmax(masked_scores, axis=-1)
+        attn_weights = tf.cast(attn_weights, tf.complex64)
         
-        attended = tf.matmul(attention_weights, v)
-        attended = tf.transpose(attended, [0, 2, 1, 3])  # [batch, seq, heads, depth]
-        attended = tf.reshape(attended, [batch_size, -1, self.d_model])
-        
-        return self.dense(attended)
+        output = tf.matmul(attn_weights, v)
+        output = tf.transpose(output, [0, 2, 1, 3])
+        batch_size = tf.shape(output)[0]
+        output = tf.reshape(output, [batch_size, -1, self.num_heads * self.depth])
+        return self.dense(output)
 
 
 class ComplexTransformerBlock(Layer):
     def __init__(self, d_model, num_heads=4, dff=512, **kwargs):
         super().__init__(**kwargs)
         self.d_model = d_model
-        self.num_heads = num_heads
-        self.dff = dff
         
-        self.attention = ComplexMultiHeadAttention(d_model, num_heads)
-        self.ffn1 = ComplexDense(dff)
-        self.ffn2 = ComplexDense(d_model)
+        # Process real and imaginary parts completely separately
+        self.real_transformer = tf.keras.Sequential([
+            tf.keras.layers.Dense(d_model, activation='relu'),
+            tf.keras.layers.Dense(d_model)
+        ])
+        
+        self.imag_transformer = tf.keras.Sequential([
+            tf.keras.layers.Dense(d_model, activation='relu'),
+            tf.keras.layers.Dense(d_model)
+        ])
 
-    def call(self, x, mask=None):
-        # Complex attention with residual
-        attn_output = self.attention(x, x, x, mask=mask)
-        x = x + attn_output
+    def call(self, x, mask=None, training=False):
+        # Split complex input
+        x_real = tf.math.real(x)
+        x_imag = tf.math.imag(x)
         
-        # Complex feed-forward with residual
-        ffn_output = self.ffn2(self.ffn1(x))
-        return x + ffn_output
+        # Process separately
+        out_real = self.real_transformer(x_real)
+        out_imag = self.imag_transformer(x_imag)
+        
+        # Combine back to complex
+        return tf.complex(out_real, out_imag)
 
 
 class ComplexConv1D(tf.keras.layers.Layer):
@@ -232,11 +229,12 @@ class AudioTransformerFreq(tf.keras.Model):
         x = x + tf.cast(pos_emb, tf.complex64)
         x_compressed = self.skip_conv(x)
 
-        mask = tf.linalg.band_part(tf.ones((tf.shape(x_compressed)[1], tf.shape(x_compressed)[1])), -1, 0)  # 1s lower-triangle
+        # --- construct causal mask ---
+        mask = tf.linalg.band_part(tf.ones((tf.shape(x_compressed)[1], tf.shape(x_compressed)[1])), -1, 0)  # lower-triangular
         mask = tf.cast(mask, tf.bool)
 
         for block in self.transformer_blocks:
-            x_compressed = block(x_compressed, mask=mask)
+            x_compressed = block(x_compressed, mask=mask, training=training)
         x_expanded = self.inverse_conv(x_compressed)
         expanded_len = tf.shape(x_expanded)[1]
         x_expanded = tf.cond(
