@@ -49,36 +49,82 @@ class ComplexDense(Layer):
         return modrelu(z, bias_val)
 
 
+class ComplexMultiHeadAttention(Layer):
+    def __init__(self, d_model, num_heads, **kwargs):
+        super().__init__(**kwargs)
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.depth = d_model // num_heads
+        
+        self.wq = ComplexDense(d_model)
+        self.wk = ComplexDense(d_model) 
+        self.wv = ComplexDense(d_model)
+        self.dense = ComplexDense(d_model)
+        
+    def call(self, q, k, v, mask=None):
+        batch_size = tf.shape(q)[0]
+        
+        q = self.wq(q)
+        k = self.wk(k)
+        v = self.wv(v)
+        
+        # Reshape for multi-head
+        q = tf.reshape(q, [batch_size, -1, self.num_heads, self.depth])
+        k = tf.reshape(k, [batch_size, -1, self.num_heads, self.depth])
+        v = tf.reshape(v, [batch_size, -1, self.num_heads, self.depth])
+        
+        # Transpose for attention computation
+        q = tf.transpose(q, [0, 2, 1, 3])  # [batch, heads, seq, depth]
+        k = tf.transpose(k, [0, 2, 1, 3])
+        v = tf.transpose(v, [0, 2, 1, 3])
+        
+        # Complex attention scores
+        scores = tf.matmul(q, k, transpose_b=True)
+        scores = scores / tf.cast(tf.sqrt(tf.cast(self.depth, tf.float32)), tf.complex64)
+        
+        # Apply causal mask if provided
+        # if mask is not None:
+        #     # Convert boolean mask to float and apply to real part of scores
+        #     mask_value = tf.where(mask, 0.0, -1e9)
+        #     mask_value = tf.cast(mask_value, tf.complex64)
+        #     scores = scores + mask_value
+
+        if mask is not None:
+            # Reshape mask to broadcast over batch and head dimensions
+            mask = tf.reshape(mask, [1, 1, tf.shape(mask)[0], tf.shape(mask)[1]])
+            # Use boolean mask directly (True = keep, False = mask out)
+            scores = tf.where(mask, scores, tf.complex(tf.fill(tf.shape(scores), -1e9), 0.0))
+
+        # Softmax on magnitude, preserve relative phase
+        attention_weights = tf.nn.softmax(tf.abs(scores), axis=-1)
+        attention_weights = tf.cast(attention_weights, tf.complex64)
+        
+        attended = tf.matmul(attention_weights, v)
+        attended = tf.transpose(attended, [0, 2, 1, 3])  # [batch, seq, heads, depth]
+        attended = tf.reshape(attended, [batch_size, -1, self.d_model])
+        
+        return self.dense(attended)
+
+
 class ComplexTransformerBlock(Layer):
     def __init__(self, d_model, num_heads=4, dff=512, **kwargs):
         super().__init__(**kwargs)
         self.d_model = d_model
         self.num_heads = num_heads
         self.dff = dff
-        self.attn = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model)
-        self.ffn = tf.keras.layers.Dense(dff, activation='relu')
-        self.proj = tf.keras.layers.Dense(d_model)
-        self.ln1 = LayerNormalization()
-        self.ln2 = LayerNormalization()
-        self.mag_norm = LayerNormalization()
+        
+        self.attention = ComplexMultiHeadAttention(d_model, num_heads)
+        self.ffn1 = ComplexDense(dff)
+        self.ffn2 = ComplexDense(d_model)
 
     def call(self, x, mask=None):
-        magnitude = tf.abs(x)
-        phase = tf.math.angle(x)
-        magnitude = self.mag_norm(magnitude)
-        magphase = tf.concat([magnitude, phase], axis=-1)
-
-        attn_out = self.attn(self.ln1(magphase), self.ln1(magphase), attention_mask=mask)
-        magphase = magphase + attn_out
-
-        ffn_out = self.proj(self.ffn(self.ln2(magphase)))
-        magphase = magphase + ffn_out
-
-        mag_out = magphase[..., :self.d_model // 2]
-        phase_out = magphase[..., self.d_model // 2:]
-        mag_out = tf.nn.softplus(mag_out)
-
-        return tf.complex(mag_out * tf.cos(phase_out), mag_out * tf.sin(phase_out))
+        # Complex attention with residual
+        attn_output = self.attention(x, x, x, mask=mask)
+        x = x + attn_output
+        
+        # Complex feed-forward with residual
+        ffn_output = self.ffn2(self.ffn1(x))
+        return x + ffn_output
 
 
 class ComplexConv1D(tf.keras.layers.Layer):
@@ -165,18 +211,19 @@ class AudioTransformerFreq(tf.keras.Model):
         self.input_proj = ComplexDense(d_model)
         self.skip_conv = ComplexConv1D(filters=d_model, kernel_size=compression_factor,
                                        strides=compression_factor, padding='same')
-        self.transformer_blocks = [ComplexTransformerBlock(d_model * 2) for _ in range(num_blocks)]
+        self.transformer_blocks = [ComplexTransformerBlock(d_model) for _ in range(num_blocks)]
         self.inverse_conv = ComplexConv1DTranspose(filters=d_model, kernel_size=compression_factor,
                                                    strides=compression_factor, padding='same')
         self.output_proj = ComplexDense(freq_bins)
 
-    def get_positional_encoding(self, seq_len, d_model):
-        pos = tf.cast(tf.range(seq_len), tf.float32)[:, None]
-        div_term = tf.exp(tf.cast(tf.range(0, d_model, 2), tf.float32) * -(tf.math.log(10000.0) / tf.cast(d_model, tf.float32)))
+    def get_positional_encoding(self, seq_len, d_model, max_len=2048):
+        pos = tf.cast(tf.range(max_len), tf.float32)[:, None]
+        div_term = tf.exp(
+            tf.range(0, d_model, 2, dtype=tf.float32) * -(tf.math.log(10000.0) / tf.cast(d_model, tf.float32)))
         pe_sin = tf.sin(pos * div_term)
         pe_cos = tf.cos(pos * div_term)
         pe = tf.concat([pe_sin, pe_cos], axis=1)[:, :d_model]
-        return pe
+        return pe[:seq_len]
 
     def call(self, stft_input, training=True):
         seq_len = tf.shape(stft_input)[1]
@@ -184,8 +231,10 @@ class AudioTransformerFreq(tf.keras.Model):
         pos_emb = self.get_positional_encoding(seq_len, self.d_model)
         x = x + tf.cast(pos_emb, tf.complex64)
         x_compressed = self.skip_conv(x)
-        mask = tf.linalg.band_part(tf.ones((tf.shape(x_compressed)[1], tf.shape(x_compressed)[1])), -1, 0)
-        mask = tf.where(mask == 0, -1e9, 0.0)
+
+        mask = tf.linalg.band_part(tf.ones((tf.shape(x_compressed)[1], tf.shape(x_compressed)[1])), -1, 0)  # 1s lower-triangle
+        mask = tf.cast(mask, tf.bool)
+
         for block in self.transformer_blocks:
             x_compressed = block(x_compressed, mask=mask)
         x_expanded = self.inverse_conv(x_compressed)

@@ -2,8 +2,10 @@ import tensorflow as tf
 import numpy as np
 import soundfile as sf
 import os
+import time
 from audio_transformer_freq import AudioTransformerFreq
 from datetime import datetime
+from tqdm import tqdm
 
 
 def magnitude_spectral_loss(y_true, y_pred):
@@ -48,16 +50,25 @@ def create_teacher_forcing_dataset(stft_data, seq_len=64, batch_size=8):
     )
     return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
-
 def safe_transfer_weights(old_model, new_model):
-    old_weights = old_model.get_weights()
-    new_weights = new_model.get_weights()
-    if len(old_weights) != len(new_weights):
-        print(f"Warning: mismatched weight count ({len(old_weights)} vs {len(new_weights)}), copying overlapping")
-    shared_len = min(len(old_weights), len(new_weights))
-    new_weights[:shared_len] = old_weights[:shared_len]
-    new_model.set_weights(new_weights)
-    print(f"Transferred {shared_len}/{len(new_weights)} weight tensors.")
+    old_map = {w.name: w.numpy() for w in old_model.weights}
+    assigned = 0
+    for w in new_model.weights:
+        name = w.name
+        if name in old_map and old_map[name].shape == tuple(w.shape):
+            w.assign(old_map[name])
+            assigned += 1
+    print(f"Transferred {assigned}/{len(new_model.weights)} tensors (matched by name & shape).")
+
+
+@tf.function
+def train_step(model, optimizer, x, y):
+    with tf.GradientTape() as tape:
+        pred = model(x, training=True)
+        loss = magnitude_spectral_loss(y, pred)
+    grads = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(grads, model.trainable_variables))
+    return loss
 
 
 def train_curriculum():
@@ -74,11 +85,13 @@ def train_curriculum():
     print(f"STFT shape: {stft_segment.shape}")
 
     stages = [
-        (16, 2, 5e-6),
-        (32, 2, 5e-6),
-        (64, 2, 5e-6),
-        (128, 2, 5e-6),
-        (256, 2, 5e-6),
+        (16, 20, 5e-5),
+        (32, 20, 5e-5),
+        (64, 20, 5e-5),
+        (128, 20, 5e-5),
+        (256, 20, 5e-5),
+        (512, 20, 5e-5),
+        (1024, 20, 5e-5),
     ]
 
     model = None
@@ -104,24 +117,35 @@ def train_curriculum():
         optimizer = tf.keras.optimizers.Adam(lr)
         dataset = create_teacher_forcing_dataset(stft_segment, seq_len, batch_size=8)
 
-        @tf.function
-        def train_step(x, y):
-            with tf.GradientTape() as tape:
-                pred = model(x, training=True)
-                loss = magnitude_spectral_loss(y, pred)
-            grads = tape.gradient(loss, model.trainable_variables)
-            optimizer.apply_gradients(zip(grads, model.trainable_variables))
-            return loss
-
         for epoch in range(epochs):
-            avg_loss = 0
-            for step, (x, y) in enumerate(dataset):
-                loss = train_step(x, y)
-                avg_loss += loss
-                if step % 50 == 0:
-                    print(f"  Step {step}: loss={loss:.6f}")
-            avg_loss /= tf.cast(step + 1, tf.float32)
-            print(f"Epoch {epoch+1}/{epochs} avg_loss={avg_loss:.6f}")
+            epoch_losses = []
+            dataset_iter = iter(dataset)
+            
+            # Count total steps
+            total_steps = sum(1 for _ in dataset)
+            dataset = create_teacher_forcing_dataset(stft_segment, seq_len, batch_size=8)
+            
+            epoch_start = time.time()
+            with tqdm(total=total_steps, desc=f"Epoch {epoch+1}/{epochs}") as pbar:
+                for step, (x, y) in enumerate(dataset):
+                    step_start = time.time()
+                    loss = train_step(model, optimizer, x, y)
+                    step_time = time.time() - step_start
+                    
+                    epoch_losses.append(loss.numpy())
+                    
+                    # Moving average of last 10 steps
+                    window_size = min(10, len(epoch_losses))
+                    moving_avg = np.mean(epoch_losses[-window_size:])
+                    pbar.set_postfix({
+                        'loss': f'{moving_avg:.6f}',
+                        'ms/step': f'{step_time*1000:.1f}'
+                    })
+                    pbar.update(1)
+            
+            epoch_time = time.time() - epoch_start
+            avg_loss = np.mean(epoch_losses)
+            print(f"Epoch {epoch+1}/{epochs} - loss: {avg_loss:.6f} - {epoch_time:.1f}s - {epoch_time/total_steps*1000:.1f}ms/step")
             model.save_weights(checkpoint_path)
 
     print("=== Curriculum Training Complete ===")
