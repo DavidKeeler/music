@@ -11,7 +11,7 @@ def complex_modrelu(z, bias):
     mag = tf.abs(z)
     b = tf.cast(bias, tf.float32)
     activated = tf.nn.relu(mag + b)
-    eps = 1e-8
+    eps = 1e-7  # Slightly larger for stability
     scale = activated / (mag + eps)
     return tf.cast(scale, tf.complex64) * z
 
@@ -22,19 +22,20 @@ class ComplexDense(Layer):
 
     def build(self, input_shape):
         in_dim = int(input_shape[-1])
+        # Store real and imaginary parts separately (combine in call)
         self.w_real = self.add_weight((in_dim, self.units), initializer='glorot_uniform', trainable=True)
         self.w_imag = self.add_weight((in_dim, self.units), initializer='glorot_uniform', trainable=True)
+        
         if self.activation:
             self.relu_bias = self.add_weight((self.units,), initializer='zeros', trainable=True)
         if self.use_bias:
             self.b = self.add_weight((self.units,), initializer='zeros', trainable=True)
 
     def call(self, x):
+        # Combine weights in call() to avoid graph scope issues
         w = tf.complex(self.w_real, self.w_imag)
-        xr, xi = tf.math.real(x), tf.math.imag(x)
-        wr, wi = tf.math.real(w), tf.math.imag(w)
-        z = tf.complex(tf.matmul(xr, wr) - tf.matmul(xi, wi),
-                       tf.matmul(xr, wi) + tf.matmul(xi, wr))
+        z = tf.matmul(x, w)
+        
         if self.use_bias:
             z += tf.cast(self.b, tf.complex64)
         return complex_modrelu(z, self.relu_bias) if self.activation else z
@@ -228,16 +229,28 @@ class STFTConsistencyLayer(Layer):
         self.frame_length, self.frame_step = frame_length, frame_step
 
     def call(self, pred_complex):
-        recon = tf.signal.inverse_stft(pred_complex, frame_length=self.frame_length, frame_step=self.frame_step)
-        return tf.signal.stft(recon, frame_length=self.frame_length, frame_step=self.frame_step)
+        # Proper windowing for inverse STFT with correct scaling
+        recon = tf.signal.inverse_stft(
+            pred_complex, 
+            frame_length=self.frame_length, 
+            frame_step=self.frame_step,
+            window_fn=tf.signal.hann_window
+        )
+        return tf.signal.stft(
+            recon, 
+            frame_length=self.frame_length, 
+            frame_step=self.frame_step,
+            window_fn=tf.signal.hann_window
+        )
 
 # --- Audio Transformer Model --- #
 class AudioTransformerFreq(tf.keras.Model):
-    def __init__(self, d_model=256, num_heads=8, num_layers=1, dff=512, compression_rate=2):
+    def __init__(self, d_model=256, num_heads=4, num_layers=1, dff=512, compression_rate=2):
         super().__init__()
         self.d_model = d_model
 
-        # Encoder: Compress 513 STFT bins → 128 complex features
+        # Encoder: Compress 513 STFT bins → 128 (divisible by num_heads=4)
+        self.input_proj = ComplexDense(128, activation=False)  # Fix 513→128
         self.encoder = ComplexDense(128, activation=False)
         self.pre_dense = ComplexDense(d_model)
 
@@ -253,15 +266,19 @@ class AudioTransformerFreq(tf.keras.Model):
 
         # Compressed-space residual prediction
         self.final_dense = ComplexDense(128)
-        # Expand back to full STFT bins (linear, complex)
+        # Expand back to 128, then to full STFT bins
+        self.pre_decoder = ComplexDense(128, activation=False)
         self.decoder = ComplexDense(513, activation=False)
 
         # STFT consistency (complex)
         self.consistency_layer = STFTConsistencyLayer(frame_length=1024, frame_step=256)
 
     def call(self, stft_input, training=False):
+        # Project 513 → 512 (divisible by num_heads)
+        x = self.input_proj(stft_input)
+        
         # Encode → complex features
-        compressed = self.encoder(stft_input)
+        compressed = self.encoder(x)
         x = self.pre_dense(compressed)
 
         # Positional encoding (real → complex)
@@ -290,8 +307,9 @@ class AudioTransformerFreq(tf.keras.Model):
         min_len = tf.minimum(tf.shape(out)[1], tf.shape(compressed)[1])
         out = out[:, :min_len, :] + compressed[:, :min_len, :]
 
-        # Decode → full STFT bins
-        full_stft = self.decoder(out)
+        # Decode → 128 → full STFT bins
+        out_128 = self.pre_decoder(out)
+        full_stft = self.decoder(out_128)
 
         # STFT consistency
         out_consistent = self.consistency_layer(full_stft)
@@ -306,4 +324,51 @@ class AudioTransformerFreq(tf.keras.Model):
         pe_cos = tf.cos(pos * div_term)
         pe = tf.concat([pe_sin, pe_cos], axis=1)[:, :d_model]
         return pe[:seq_len]
+    
+    def generate(self, seed_stft, num_steps, temperature=1.0):
+        """
+        Efficient autoregressive generation with preallocation.
+        
+        Args:
+            seed_stft: [1, seed_len, 513] initial STFT frames
+            num_steps: number of new frames to generate
+            temperature: sampling temperature (1.0 = no change)
+        
+        Returns:
+            generated_stft: [1, seed_len + num_steps, 513]
+        """
+        batch_size = tf.shape(seed_stft)[0]
+        seed_len = tf.shape(seed_stft)[1]
+        
+        # Preallocate output tensor for efficiency
+        total_len = seed_len + num_steps
+        output_shape = [batch_size, total_len, 513]
+        generated = tf.Variable(tf.zeros(output_shape, dtype=tf.complex64))
+        
+        # Initialize with seed
+        generated[:, :seed_len, :].assign(seed_stft)
+        
+        # Generate step by step
+        for step in range(num_steps):
+            current_len = seed_len + step
+            current_seq = generated[:, :current_len, :]
+            
+            # Forward pass
+            next_frame = self(current_seq, training=False)
+            
+            # Take only the last predicted frame
+            next_frame = next_frame[:, -1:, :]
+            
+            # Optional temperature scaling
+            if temperature != 1.0:
+                # Scale magnitude by temperature
+                mag = tf.abs(next_frame)
+                phase = tf.math.angle(next_frame)
+                mag = mag ** (1.0 / temperature)
+                next_frame = mag * tf.exp(1j * tf.cast(phase, tf.complex64))
+            
+            # Assign to preallocated tensor
+            generated[:, current_len:current_len+1, :].assign(next_frame)
+        
+        return generated.value()
 
