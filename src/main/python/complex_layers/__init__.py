@@ -5,6 +5,7 @@ from .complex_layers import (
     ComplexTransformerBlock,
     ComplexConv1D,
     ComplexConv1DTranspose,
+    ComplexGRU,
     spectral_norm_complex,
     complex_modrelu
 )
@@ -16,6 +17,7 @@ __all__ = [
     'ComplexTransformerBlock',
     'ComplexConv1D',
     'ComplexConv1DTranspose',
+    'ComplexGRU',
     'spectral_norm_complex',
     'complex_modrelu'
 ]

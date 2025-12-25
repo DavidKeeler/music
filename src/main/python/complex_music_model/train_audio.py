@@ -2,160 +2,243 @@ import tensorflow as tf
 import numpy as np
 import soundfile as sf
 import os
-import time
 from datetime import datetime
-from tqdm import tqdm
-from audio_transformer_freq import ComplexDense, ComplexConv1D, ComplexConv1DTranspose, ComplexTransformerBlock, AudioTransformerFreq
+from audio_transformer_freq import AudioTransformerFreq
 
-import tensorflow as tf
-
-# STFT Configuration - Fixed for smooth phase evolution
 FRAME_LENGTH = 1024
-FRAME_STEP = 256  # 75% overlap instead of 50%
-MEL_BINS = 128
+FRAME_STEP = 256
+N_MELS = 128
 SAMPLE_RATE = 22050
 
-import tensorflow as tf
-import numpy as np
+def audio_to_mel(waveform):
+    stft = tf.signal.stft(waveform, FRAME_LENGTH, FRAME_STEP, pad_end=True)
+    magnitude = tf.abs(stft)
+    mel_matrix = tf.signal.linear_to_mel_weight_matrix(
+        num_mel_bins=N_MELS,
+        num_spectrogram_bins=FRAME_LENGTH // 2 + 1,
+        sample_rate=SAMPLE_RATE,
+        lower_edge_hertz=20.0,
+        upper_edge_hertz=8000.0
+    )
+    mel = tf.matmul(magnitude, mel_matrix)
+    return tf.math.log(mel + 1e-6)
+
+def audio_to_stft(audio):
+    return tf.signal.stft(audio, FRAME_LENGTH, FRAME_STEP, window_fn=tf.signal.hann_window)
+
+def stft_to_audio(stft):
+    return tf.math.real(tf.signal.inverse_stft(stft, FRAME_LENGTH, FRAME_STEP, window_fn=tf.signal.hann_window))
 
 def complex_stft_loss(y_true, y_pred, eps=1e-8):
     """
-    Lightweight complex STFT loss with stable phase smoothness.
-
-    Args:
-        y_true, y_pred: [batch, time, freq_bins], tf.complex64
-        eps: small value to avoid division by zero
-    Returns:
-        total_loss, mag_loss, phase_loss, continuity_loss, smooth_loss
+    Fully stabilized complex STFT loss.
+    Removes all NaN/Inf sources:
+      - angle() on near-zero magnitudes
+      - correlation denominator collapse
+      - IF weight normalization
     """
-    # -------------------------------
-    # 1. Magnitude loss
-    # -------------------------------
-    mag_true = tf.abs(y_true)
-    mag_pred = tf.abs(y_pred)
-    mag_loss = tf.reduce_mean(tf.square(tf.math.log1p(mag_true) - tf.math.log1p(mag_pred)))
 
-    # -------------------------------
-    # 2. Phase loss (global)
-    # -------------------------------
-    conj_prod = y_true * tf.math.conj(y_pred)
-    phase_loss = 1.0 - tf.reduce_mean(tf.math.cos(tf.math.angle(conj_prod)))
+    # -----------------------------------------------------------
+    # 0. Safe complex jitter to avoid undefined angle(0+0j)
+    # -----------------------------------------------------------
+    jitter = eps * 1e2   # tiny, but enough to avoid zero magnitude
+    noise_real = tf.random.normal(tf.shape(y_pred), stddev=jitter)
+    noise_imag = tf.random.normal(tf.shape(y_pred), stddev=jitter)
 
-    # -------------------------------
-    # 3. Spectral centroid continuity
-    # -------------------------------
-    freq_bins = tf.range(tf.shape(y_true)[-1], dtype=tf.float32)
-    centroid_true = tf.reduce_sum(mag_true * freq_bins[None, None, :], axis=-1) / (
-                tf.reduce_sum(mag_true, axis=-1) + eps)
-    centroid_pred = tf.reduce_sum(mag_pred * freq_bins[None, None, :], axis=-1) / (
-                tf.reduce_sum(mag_pred, axis=-1) + eps)
-    continuity_loss = tf.reduce_mean(tf.square((centroid_true[:, 1:] - centroid_true[:, :-1]) -
-                                               (centroid_pred[:, 1:] - centroid_pred[:, :-1])))
+    y_true_safe = y_true + tf.complex(noise_real, noise_imag)
+    y_pred_safe = y_pred + tf.complex(noise_real, noise_imag)  # same noise OK
 
-    # -------------------------------
-    # 4. Phase smoothness (stable)
-    # -------------------------------
-    # Use angle(a * conj(b)) for frame-to-frame difference
-    delta_true = tf.math.angle(y_true[:, 1:, :] * tf.math.conj(y_true[:, :-1, :]))
-    delta_pred = tf.math.angle(y_pred[:, 1:, :] * tf.math.conj(y_pred[:, :-1, :]))
+    mag_true = tf.abs(y_true_safe)
+    mag_pred = tf.abs(y_pred_safe)
 
-    # Use magnitude-weighted smoothness instead of hard masking
-    mag_weights = tf.minimum(mag_true[:, 1:, :], mag_true[:, :-1, :])
-    mag_weights = mag_weights / (tf.reduce_max(mag_weights, axis=-1, keepdims=True) + eps)
-    
-    # Compute weighted phase difference
-    phase_diff = tf.square(delta_true - delta_pred)
-    smooth_loss = tf.reduce_sum(mag_weights * phase_diff) / (tf.reduce_sum(mag_weights) + eps)
+    # -----------------------------------------------------------
+    # 1. Magnitude (log-L2)
+    # -----------------------------------------------------------
+    mag_loss = tf.reduce_mean(
+        tf.square(tf.math.log1p(mag_true) - tf.math.log1p(mag_pred))
+    )
 
-    # Normalize phase difference by pi to keep loss scale reasonable
-    smooth_loss = smooth_loss / (np.pi * np.pi)
+    # -----------------------------------------------------------
+    # 2a. Stable global cosine phase loss
+    # -----------------------------------------------------------
+    conj_prod = y_true_safe * tf.math.conj(y_pred_safe)
+    phase_loss_cos = 1.0 - tf.reduce_mean(
+        tf.math.cos(tf.math.angle(conj_prod))
+    )
 
-    # -------------------------------
-    # 5. Weighted sum
-    # -------------------------------
-    total_loss = mag_loss + 1.0 * phase_loss + 1.0 * continuity_loss + 1.0 * smooth_loss
+    # -----------------------------------------------------------
+    # 2b. Wrapped local phase difference
+    # -----------------------------------------------------------
+    phase_true = tf.math.angle(y_true_safe)
+    phase_pred = tf.math.angle(y_pred_safe)
+
+    phase_diff = tf.atan2(
+        tf.sin(phase_true - phase_pred),
+        tf.cos(phase_true - phase_pred)
+    )
+
+    phase_loss_wrapped = tf.reduce_mean(tf.square(phase_diff))
+
+    phase_loss = 0.5 * phase_loss_cos + 0.5 * phase_loss_wrapped
+
+    # -----------------------------------------------------------
+    # 3. IF loss (wrapped + stable weighting)
+    # -----------------------------------------------------------
+    d_true = tf.math.angle(
+        y_true_safe[:, 1:, :] * tf.math.conj(y_true_safe[:, :-1, :])
+    )
+    d_pred = tf.math.angle(
+        y_pred_safe[:, 1:, :] * tf.math.conj(y_pred_safe[:, :-1, :])
+    )
+
+    d_diff = tf.atan2(tf.sin(d_true - d_pred), tf.cos(d_true - d_pred))
+
+    w = tf.minimum(mag_true[:, 1:, :], mag_true[:, :-1, :])
+
+    # Safe normalization: only normalize if max(w) > threshold
+    max_w = tf.reduce_max(w, axis=[1, 2], keepdims=True)
+    safe_norm = tf.where(max_w > 1e-6, w / max_w, tf.zeros_like(w))
+
+    if_loss = (
+        tf.reduce_sum(safe_norm * tf.square(d_diff)) /
+        (tf.reduce_sum(safe_norm) + eps)
+    )
+
+    # -----------------------------------------------------------
+    # 4. Merged temporal + correlation loss
+    # -----------------------------------------------------------
+    m1 = mag_pred[:, 1:, :]
+    m2 = mag_pred[:, :-1, :]
+
+    delta_mag = m1 - m2
+
+    # centered
+    m1m = m1 - tf.reduce_mean(m1, axis=-1, keepdims=True)
+    m2m = m2 - tf.reduce_mean(m2, axis=-1, keepdims=True)
+
+    num = tf.reduce_sum(m1m * m2m, axis=-1)
+
+    # Safe denominator: avoid 0 via floor
+    den = tf.sqrt(
+        tf.reduce_sum(m1m ** 2, axis=-1) *
+        tf.reduce_sum(m2m ** 2, axis=-1)
+    )
+    den = tf.maximum(den, 1e-4)  # prevents blow-up
+
+    corr = num / den  # [-1,1]
+
+    temp_corr_loss = tf.reduce_mean(
+        tf.square(delta_mag) * (1.0 - corr[:, :, tf.newaxis])
+    )
+
+    # -----------------------------------------------------------
+    # Weighted total (your original weights)
+    # -----------------------------------------------------------
+    total_loss = (
+        2.0 * mag_loss +
+        30.0 * phase_loss +
+        2.0 * if_loss +
+        1.0 * temp_corr_loss
+    )
+
+    # Absolute safety check (should never trigger now)
     total_loss = tf.where(tf.math.is_finite(total_loss), total_loss, 1.0)
 
-    return total_loss, mag_loss, phase_loss, continuity_loss, smooth_loss
-
+    return total_loss, mag_loss, phase_loss, if_loss, temp_corr_loss
 
 def multi_resolution_stft_loss(
     y_true,
     y_pred,
-    fft_sizes=(256, 1024, 4096),
-    hop_sizes=(64, 256, 1024),
-    win_lengths=(256, 1024, 4096),
-    phase_weight=0.05,
-    env_weight=0.3,
-    eps=1e-7
+    fft_sizes=(2048, 1024, 512),
+    hop_sizes=(256, 128, 64),
+    win_lengths=None,
+    mag_loss_power=1,
+    eps=1e-7,
+    window_fn=tf.signal.hann_window,
+    res_weights=None,
 ):
-    """Multi-resolution perceptual STFT loss for music generation.
-       Returns: total_loss, mag_loss, env_loss, phase_loss
     """
+    Correct MR-STFT loss (HiFi-GAN style) that always compares waveforms
+    across multiple STFT resolutions.
 
+    Args:
+      y_true, y_pred: either waveforms [B, T] (float) OR complex STFTs [B, F, T?] (complex).
+                      If complex STFTs are passed, they are ISTFT'ed to waveforms first.
+      fft_sizes, hop_sizes, win_lengths: iterables of ints (same length).
+      mag_loss_power: 1 -> L1 on log1p(mag), 2 -> squared
+      res_weights: optional list/tuple of same length as fft_sizes for weighting each resolution.
+      eps: numeric stability
+      window_fn: callable to create window for stft/istft
+    Returns:
+      total_loss: scalar tensor
+      details: dict with per-resolution 'sc_losses' and 'mag_losses' and their means
+    """
+    if win_lengths is None:
+        win_lengths = fft_sizes
+    if not (len(fft_sizes) == len(hop_sizes) == len(win_lengths)):
+        raise ValueError("fft_sizes, hop_sizes, win_lengths must have same length")
+
+    def _ensure_waveform(x):
+        if x.dtype.is_complex:
+            frame_length = win_lengths[0]
+            frame_step = hop_sizes[0]
+            return tf.math.real(tf.signal.inverse_stft(x, frame_length=frame_length,
+                                                       frame_step=frame_step, window_fn=window_fn))
+        else:
+            return x
+
+    y_true_w = _ensure_waveform(y_true)
+    y_pred_w = _ensure_waveform(y_pred)
+
+    sc_losses = []
     mag_losses = []
-    env_losses = []
-    phase_losses = []
+    per_res = []
 
-    for fft, hop, win in zip(fft_sizes, hop_sizes, win_lengths):
+    if res_weights is None:
+        res_weights = [1.0] * len(fft_sizes)
+    else:
+        if len(res_weights) != len(fft_sizes):
+            raise ValueError("res_weights must match number of resolutions")
 
-        # Compute STFTs
-        S_true = tf.signal.stft(y_true, win, hop, fft, pad_end=True)
-        S_pred = tf.signal.stft(y_pred, win, hop, fft, pad_end=True)
+    for i, (fft, hop, win) in enumerate(zip(fft_sizes, hop_sizes, win_lengths)):
+        S_true = tf.signal.stft(y_true_w, frame_length=win, frame_step=hop,
+                                fft_length=fft, window_fn=window_fn, pad_end=True)
+        S_pred = tf.signal.stft(y_pred_w, frame_length=win, frame_step=hop,
+                                fft_length=fft, window_fn=window_fn, pad_end=True)
 
         mag_true = tf.abs(S_true) + eps
         mag_pred = tf.abs(S_pred) + eps
 
-        # ----------------------------------------------------
-        # 1. Log-magnitude loss (core perceptual term)
-        # ----------------------------------------------------
-        mag_loss = tf.reduce_mean(
-            tf.square(tf.math.log1p(mag_true) - tf.math.log1p(mag_pred))
-        )
-        mag_losses.append(mag_loss)
+        num = tf.sqrt(tf.reduce_sum((mag_true - mag_pred) ** 2, axis=[-2, -1]))
+        den = tf.sqrt(tf.reduce_sum((mag_true) ** 2, axis=[-2, -1])) + eps
+        sc_per_example = num / den
+        sc_res = tf.reduce_mean(sc_per_example)
 
-        # ----------------------------------------------------
-        # 2. Spectral envelope (smooth mel-like structure)
-        # ----------------------------------------------------
-        # Soft frequency weighting to emphasize low/mid bands
-        freqs = tf.linspace(0.0, 1.0, mag_true.shape[-1])
-        weight = tf.exp(-3.0 * freqs)[None, None, :]
+        log_true = tf.math.log1p(mag_true)
+        log_pred = tf.math.log1p(mag_pred)
+        diff = tf.abs(log_true - log_pred)
+        if mag_loss_power == 1:
+            mag_res = tf.reduce_mean(diff)
+        else:
+            mag_res = tf.reduce_mean(diff ** 2)
 
-        env_true = tf.reduce_sum(mag_true * weight, axis=-1)
-        env_pred = tf.reduce_sum(mag_pred * weight, axis=-1)
+        w = float(res_weights[i])
+        sc_losses.append(sc_res * w)
+        mag_losses.append(mag_res * w)
+        per_res.append((sc_res, mag_res))
 
-        env_loss = tf.reduce_mean(tf.square(env_true - env_pred))
-        env_losses.append(env_loss)
+    sc_loss = tf.add_n(sc_losses) / tf.cast(len(sc_losses), tf.float32)
+    mag_loss = tf.add_n(mag_losses) / tf.cast(len(mag_losses), tf.float32)
 
-        # ----------------------------------------------------
-        # 3. Phase-difference loss (instantaneous frequency)
-        # Only applied on small FFT sizes
-        # ----------------------------------------------------
-        if fft <= 1024 and phase_weight > 0:
-            phase_true = tf.math.angle(S_true)
-            phase_pred = tf.math.angle(S_pred)
+    total_loss = sc_loss + mag_loss
 
-            # frame-to-frame difference: instantaneous frequency proxy
-            dphi_true = tf.sin(phase_true[:, 1:, :] - phase_true[:, :-1, :])
-            dphi_pred = tf.sin(phase_pred[:, 1:, :] - phase_pred[:, :-1, :])
+    details = {
+        "sc_loss": sc_loss,
+        "mag_loss": mag_loss,
+        "per_res": per_res
+    }
+    return total_loss, details
 
-            # Onset-aware masking: ignore high spectral flux frames
-            flux = tf.reduce_mean(tf.abs(mag_true[:, 1:, :] - mag_true[:, :-1, :]), axis=-1)
-            mask = 1.0 / (1.0 + 10.0 * flux)   # suppress phase loss on transients
-            mask = mask[:, :, None]
-
-            phase_loss = tf.reduce_mean(mask * tf.square(dphi_true - dphi_pred))
-            phase_losses.append(phase_loss)
-
-    # Sum over all resolutions
-    mag_loss = tf.add_n(mag_losses)
-    env_loss = env_weight * tf.add_n(env_losses)
-    phase_loss = phase_weight * (tf.add_n(phase_losses) if len(phase_losses) else 0.0)
-
-    total = mag_loss + env_loss + phase_loss
-    total = tf.where(tf.math.is_finite(total), total, 1.0)
-
-    return total, mag_loss, env_loss, phase_loss
 
 def load_full_audio(file_path, sr=22050):
     audio, file_sr = sf.read(file_path)
@@ -187,18 +270,20 @@ def stft_to_audio(stft):
 
 
 
-def make_batches(stft_data, seq_len=64, batch_size=8):
-    # Keep original STFT data - model will handle mel conversion internally
-    x_data = []
-    y_data = []
-    for i in range(len(stft_data) - seq_len - 1):
-        x_data.append(stft_data[i:i + seq_len])
-        y_data.append(stft_data[i + 1:i + seq_len + 1])
+def make_batches(mel_data, stft_data, seq_len=64, batch_size=8):
+    min_len = min(len(mel_data), len(stft_data))
     
-    x_data = tf.stack(x_data)
-    y_data = tf.stack(y_data)
+    def generator():
+        for i in range(min_len - seq_len - 1):
+            yield mel_data[i:i + seq_len], stft_data[i + 1:i + seq_len + 1]
     
-    ds = tf.data.Dataset.from_tensor_slices((x_data, y_data))
+    ds = tf.data.Dataset.from_generator(
+        generator,
+        output_signature=(
+            tf.TensorSpec(shape=(seq_len, mel_data.shape[1]), dtype=tf.float32),
+            tf.TensorSpec(shape=(seq_len, stft_data.shape[1]), dtype=tf.complex64)
+        )
+    )
     return ds.shuffle(buffer_size=1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
 class SaveBaseModelCallback(tf.keras.callbacks.Callback):
@@ -211,9 +296,11 @@ class SaveBaseModelCallback(tf.keras.callbacks.Callback):
         print(f"Epoch {epoch + 1}: saved base model weights to {self.filepath}")
 
 class TrainingModel(tf.keras.Model):
-    def __init__(self, base_model, **kwargs):
+    def __init__(self, base_model, loss_type="complex_stft", combined_weight=0.5, **kwargs):
         super().__init__(**kwargs)
         self.base_model = base_model
+        self.loss_type = loss_type
+        self.combined_weight = combined_weight
     
     def call(self, inputs, training=False):
         return self.base_model(inputs, training=training)
@@ -222,37 +309,32 @@ class TrainingModel(tf.keras.Model):
         x, y = data
         
         with tf.GradientTape() as tape:
-            pred = self.base_model(x, training=True)
-            total_loss, mag_loss, phase_loss, continuity_loss, smooth_loss = complex_stft_loss(y, pred)
+            pred = self.base_model([x, y], training=True)
             
-            # Diagnostics for smooth loss
-            delta_true = tf.math.angle(y[:, 1:, :] * tf.math.conj(y[:, :-1, :]))
-            delta_pred = tf.math.angle(pred[:, 1:, :] * tf.math.conj(pred[:, :-1, :]))
-            
-            mean_delta_true = tf.reduce_mean(tf.abs(delta_true))
-            mean_delta_pred = tf.reduce_mean(tf.abs(delta_pred))
+            if self.loss_type == "complex_stft":
+                total_loss, mag_loss, phase_loss, if_loss, temp_corr_loss = complex_stft_loss(y, pred)
+            elif self.loss_type == "mr_stft":
+                total_loss, details = multi_resolution_stft_loss(y, pred)
+                mag_loss = details["mag_loss"]
+                phase_loss = tf.constant(0.0)
+                if_loss = details["sc_loss"]
+                temp_corr_loss = tf.constant(0.0)
+            else:
+                loss1, mag_loss, phase_loss, if_loss, temp_corr_loss = complex_stft_loss(y, pred)
+                loss2, details = multi_resolution_stft_loss(y, pred)
+                total_loss = self.combined_weight * loss1 + (1 - self.combined_weight) * loss2
         
         grads = tape.gradient(total_loss, self.base_model.trainable_variables)
-        
-        # Check for NaN gradients and clip more aggressively
-        grads = [tf.where(tf.math.is_finite(g), g, tf.zeros_like(g)) if g is not None else g for g in grads]
         grads = [tf.clip_by_norm(g, 0.5) if g is not None else g for g in grads]
-        
-        # Calculate gradient norm for monitoring
-        grad_norm = tf.sqrt(tf.add_n([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
-        
         self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
         
         return {
-            "0_loss": total_loss,
-            "1_mag": mag_loss,
-            "2_phase": phase_loss,
-            "3_continuity": continuity_loss,
-            "4_smooth": smooth_loss,
-            "5_lr": self.optimizer.learning_rate,
-            "6_grad_norm": grad_norm,
-            "7_delta_true": mean_delta_true,
-            "8_delta_pred": mean_delta_pred
+            "0-loss": total_loss,
+            "mag": mag_loss,
+            "phase": phase_loss,
+            "if": if_loss,
+            "temp": temp_corr_loss,
+            "lr": self.optimizer.learning_rate,
         }
 
 class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -288,6 +370,9 @@ class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         }
 
 def train_curriculum():
+    LOSS_TYPE = "complex_stft"
+    COMBINED_WEIGHT = 0.5
+    
     input_file = "/Users/davidkeeler/data/music/musicnet/test_data/2416.wav"
     checkpoint_dir = "/Users/davidkeeler/models/conducting/checkpoints/"
     output_dir = "/Users/davidkeeler/data/music/model_out"
@@ -296,79 +381,64 @@ def train_curriculum():
 
     print(f"=== Training Started: {datetime.now()} ===")
 
-    audio = load_full_audio(input_file)
+    audio, _ = sf.read(input_file)
+    if len(audio.shape) > 1:
+        audio = np.mean(audio, axis=1)
+    audio = audio / (np.max(np.abs(audio)) + 1e-8)
+    audio = audio.astype(np.float32)
+    
+    mel_data = audio_to_mel(audio)
     stft_data = audio_to_stft(audio)
-    print(f"STFT shape: {stft_data.shape}")
+    print(f"Mel shape: {mel_data.shape}, STFT shape: {stft_data.shape}")
 
     base_model = AudioTransformerFreq()
-    model = TrainingModel(base_model)
+    model = TrainingModel(base_model, loss_type=LOSS_TYPE, combined_weight=COMBINED_WEIGHT)
+    print(f"Using loss type: {LOSS_TYPE}")
 
-    teacher_forcing = 1.0
-
-    stages = [(128, 30)] + [(128, 10)] * 10
+    stages = [(16, 200)]
     
-    # Calculate total training steps
-    steps_per_epoch = (len(stft_data) - 32 - 1) // 8
-    total_steps = steps_per_epoch * sum(epochs for _, epochs in stages)
-
-    lr_schedule = WarmupCosineSchedule(
-        base_lr=3e-5,
-        min_lr=1e-5,
-        warmup_steps= steps_per_epoch * 1,
-        total_steps=total_steps,
-    )
-    
-    optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
-    model.compile(optimizer=optimizer)
     checkpoint_path = os.path.join(checkpoint_dir, 'autoreg_weights.weights.h5')
 
-    # Load existing weights if available
     if os.path.exists(checkpoint_path):
         try:
-            dummy = tf.zeros((1, 64, 513), dtype=tf.complex64)
+            dummy = tf.zeros((1, 64, N_MELS))
             model.base_model(dummy)
             model.base_model.load_weights(checkpoint_path)
             print(f"Loaded weights from: {checkpoint_path}")
         except Exception as e:
             print(f"Failed to load weights: {e}")
-    else:
-        print("No existing checkpoint found")
 
-    # Build and show model summary
-    sample = stft_data[:32][tf.newaxis, ...]
+    sample = [mel_data[:32][tf.newaxis, ...], stft_data[:32][tf.newaxis, ...]]
     _ = model.base_model(sample)
+    print("Model built successfully")
     model.base_model.summary()
+    
     for stage, (seq_len, epochs) in enumerate(stages):
-        print(f"\n--- Stage {stage+1} | seq_len={seq_len} | epochs={epochs} | teacher_forcing={teacher_forcing:.2f} ---")
-        
-        # Set teacher forcing probability
-        model.teacher_forcing_prob = teacher_forcing
-        
-        dataset = make_batches(stft_data, seq_len, batch_size=8)
-        
-        # Create custom checkpoint callback for base model
-        checkpoint_callback = SaveBaseModelCallback(checkpoint_path)
-        
-        # Train using Keras fit
-        history = model.fit(dataset, epochs=epochs, verbose=1, callbacks=[checkpoint_callback])
+        print(f"\n--- Stage {stage+1} | seq_len={seq_len} | epochs={epochs} ---")
 
-        teacher_forcing *= 0.9
+        steps_per_epoch = (len(mel_data) - seq_len - 1) // 8
+        total_steps = steps_per_epoch * epochs
+        print(f"Steps per epoch: {steps_per_epoch}")
+
+        lr_schedule = WarmupCosineSchedule(
+            base_lr=1e-5,
+            min_lr=5e-6,
+            warmup_steps=0, #steps_per_epoch,
+            total_steps=total_steps,
+        )
+
+        optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+        model.compile(optimizer=optimizer)
+        print("Model compiled")
+        
+        print("Creating dataset...")
+        dataset = make_batches(mel_data, stft_data, seq_len, batch_size=8)
+        print("Dataset created")
+        checkpoint_callback = SaveBaseModelCallback(checkpoint_path)
+        print("Starting fit...")
+        model.fit(dataset, epochs=epochs, verbose=1, callbacks=[checkpoint_callback])
 
     print("=== Training Complete ===")
-
-    # Generate output
-    init = stft_data[:64][tf.newaxis, ...]
-    seq = [init]
-    
-    for _ in range(200):
-        inp = tf.concat(seq, axis=1)
-        output = model(inp, training=False)
-        next_frame = output[:, -1:, :]
-        seq.append(next_frame)
-    
-    gen = tf.concat(seq, axis=1)[0]
-    out_audio = stft_to_audio(gen).numpy()
-    sf.write(os.path.join(output_dir, "autoregressive_generated.wav"), out_audio, 22050)
     print("Saved generated audio output.")
 
 if __name__ == "__main__":

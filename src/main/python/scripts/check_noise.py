@@ -1,6 +1,7 @@
 import numpy as np
 import soundfile as sf
 import os
+import sys
 from scipy import signal
 
 def analyze_audio_quality(file_path):
@@ -26,7 +27,13 @@ def analyze_audio_quality(file_path):
     hist, _ = np.histogram(audio, bins=50, density=True)
     entropy = -np.sum(hist * np.log(hist + 1e-10))
     
+    # 5. RMS and duration
+    rms = np.sqrt(np.mean(audio**2))
+    duration = len(audio) / sr
+    
     print(f"Audio: {os.path.basename(file_path)}")
+    print(f"Duration: {duration:.2f} seconds")
+    print(f"RMS: {rms:.4f}")
     print(f"Spectral flatness: {spectral_flatness:.4f} (noise > 0.5)")
     print(f"Zero crossing rate: {zero_crossings:.4f} (noise > 0.1)")
     print(f"Centroid std: {centroid_std:.1f} (noise > 2000)")
@@ -49,7 +56,7 @@ def check_latest_generation():
     training_file = "/Users/davidkeeler/data/music/musicnet/test_data/2416.wav"
     
     # Check generated audio
-    files = [f for f in os.listdir(output_dir) if f.startswith("generated_30sec_")]
+    files = [f for f in os.listdir(output_dir) if f.endswith('.wav')]
     if not files:
         print("No generated files found")
         return
@@ -62,4 +69,13 @@ def check_latest_generation():
     analyze_audio_quality(generated_path)
 
 if __name__ == "__main__":
-    check_latest_generation()
+    if len(sys.argv) > 1:
+        # Analyze specific file
+        file_path = sys.argv[1]
+        if os.path.exists(file_path):
+            analyze_audio_quality(file_path)
+        else:
+            print(f"File not found: {file_path}")
+    else:
+        # Check latest generation
+        check_latest_generation()
