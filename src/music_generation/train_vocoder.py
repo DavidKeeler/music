@@ -84,11 +84,11 @@ def train_vocoder(
     training_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr))
     
     # Callbacks
-    checkpoint_path = Path(checkpoint_dir) / "checkpoint_epoch_{epoch:02d}.h5"
+    checkpoint_path = Path(checkpoint_dir) / "checkpoint_epoch_{epoch:02d}"
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
             str(checkpoint_path),
-            save_weights_only=True,
+            save_weights_only=False,
             save_freq='epoch'
         ),
         tf.keras.callbacks.TensorBoard(log_dir=str(Path(checkpoint_dir) / "logs"))

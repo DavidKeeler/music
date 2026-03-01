@@ -92,20 +92,20 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
     
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / "mel_generator.weights.h5"
+    checkpoint_path = checkpoint_dir / "mel_generator"
     
     if resume_from:
         print(f"Resuming from {resume_from}")
         base_model.load_weights(resume_from)
     
     callbacks = [
-        tf.keras.callbacks.ModelCheckpoint(checkpoint_path, save_weights_only=True, save_best_only=True),
+        tf.keras.callbacks.ModelCheckpoint(checkpoint_path, save_weights_only=False, save_best_only=True),
         tf.keras.callbacks.TensorBoard(log_dir=checkpoint_dir / "logs"),
     ]
     
     model.fit(dataset, epochs=epochs, steps_per_epoch=steps_per_epoch, callbacks=callbacks)
     
-    print(f"Training complete. Weights saved to {checkpoint_path}")
+    print(f"Training complete. Model saved to {checkpoint_path}")
 
 
 def main():
