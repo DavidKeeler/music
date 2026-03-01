@@ -1,9 +1,13 @@
 """Vocoder model for mel-to-audio conversion."""
 
 import tensorflow as tf
-import tensorflow_hub as hub
 from pathlib import Path
 from typing import Optional
+
+try:
+    from TensorFlowTTS.tensorflow_tts.inference import TFAutoModel
+except ImportError:
+    TFAutoModel = None
 
 
 class HiFiGANVocoder(tf.keras.Model):
@@ -36,29 +40,35 @@ class HiFiGANVocoder(tf.keras.Model):
             if mel_spectrogram.shape[1] == 80:  # [batch, 80, time]
                 mel_spectrogram = tf.transpose(mel_spectrogram, [0, 2, 1])
         
-        return self.generator(mel_spectrogram, training=training)
+        # MelGAN uses inference() method and outputs [batch, samples, 1]
+        audio = self.generator.inference(mel_spectrogram)
+        
+        # Squeeze to [batch, samples]
+        audio = tf.squeeze(audio, axis=-1)
+        
+        return audio
 
 
-def load_pretrained_vocoder(model_url: Optional[str] = None) -> HiFiGANVocoder:
-    """Load pretrained vocoder from TensorFlow Hub.
+def load_pretrained_vocoder(model_name: Optional[str] = None) -> HiFiGANVocoder:
+    """Load pretrained vocoder from TensorFlowTTS.
     
     Args:
-        model_url: TensorFlow Hub model URL. If None, returns placeholder.
+        model_name: Model name for TFAutoModel. If None, uses default MelGAN.
         
     Returns:
         HiFiGANVocoder instance
         
     Note:
-        Common TF Hub vocoder models:
-        - "https://tfhub.dev/google/soundstream/mel/decoder/music/1"
-        - Custom HiFi-GAN models if available
+        Default model: "tensorspeech/tts-melgan-ljspeech-en"
     """
-    if model_url is None:
-        # Return vocoder with no pretrained model (must be loaded separately)
-        return HiFiGANVocoder(pretrained_model=None)
+    if TFAutoModel is None:
+        raise ImportError("TensorFlowTTS not installed. Run: pip install TensorFlowTTS")
     
-    # Load from TensorFlow Hub
-    pretrained_model = hub.load(model_url)
+    if model_name is None:
+        model_name = "tensorspeech/tts-melgan-ljspeech-en"
+    
+    # Load from TensorFlowTTS
+    pretrained_model = TFAutoModel.from_pretrained(model_name)
     return HiFiGANVocoder(pretrained_model=pretrained_model)
 
 

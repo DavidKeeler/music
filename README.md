@@ -1,6 +1,6 @@
 # Music Generation with TensorFlow
 
-TensorFlow/Keras port of the PyTorch music generation system. Generates music using a Transformer-based mel spectrogram generator and HiFi-GAN vocoder.
+TensorFlow/Keras port of the PyTorch music generation system. Generates music using a Transformer-based mel spectrogram generator and MelGAN vocoder.
 
 ## Installation
 
@@ -22,7 +22,7 @@ src/music_generation/
 ├── layers.py          # Custom Keras layers
 ├── train.py           # Training with teacher forcing
 ├── train_vocoder.py   # Vocoder finetuning
-├── vocoder.py         # HiFi-GAN vocoder wrapper
+├── vocoder.py         # MelGAN vocoder wrapper
 ├── losses.py          # STFT and adversarial losses
 ├── dataset.py         # tf.data.Dataset pipeline
 ├── audio_utils.py     # Audio preprocessing
@@ -94,7 +94,7 @@ sf.write('generated.wav', audio.numpy(), 22050)
 - Training: autoregressive with teacher forcing
 
 **Vocoder:**
-- HiFi-GAN from TensorFlow Hub
+- MelGAN from TensorFlowTTS
 - Input: mel spectrogram [batch, time, 80]
 - Output: audio waveform [batch, samples]
 

@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772397744-50ee
+> Keras custom train_step pattern: add metrics as tf.keras.metrics.Mean in __init__, update in train_step, return dict with metric.result(), add @property metrics for auto-reset
+<!-- tags: tensorflow, keras, training | created: 2026-03-01 -->
+
 ### mem-1772303418-a7d1
 > Tests ported to TensorFlow: use tf.random.normal, tf.math.is_nan/is_inf + tf.reduce_any, tf.reduce_all for assertions. Dataset tests use tf.data.Dataset iteration instead of PyTorch DataLoader.
 <!-- tags: testing, tensorflow | created: 2026-02-28 -->

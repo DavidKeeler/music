@@ -117,8 +117,8 @@ def parse_args(args=None):
                         help='Batch size')
     parser.add_argument('--lr', type=float, default=1e-4,
                         help='Learning rate')
-    parser.add_argument('--model_url', type=str, default=None,
-                        help='TensorFlow Hub model URL (optional)')
+    parser.add_argument('--model_name', type=str, default=None,
+                        help='TensorFlowTTS model name (default: tensorspeech/tts-melgan-ljspeech-en)')
     
     return parser.parse_args(args)
 
@@ -130,12 +130,12 @@ def main():
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     
     # Load pretrained vocoder
-    print("Loading pretrained HiFi-GAN...")
-    vocoder_model = vocoder.load_pretrained_vocoder(args.model_url)
+    print("Loading pretrained MelGAN...")
+    vocoder_model = vocoder.load_pretrained_vocoder(args.model_name)
     
     if vocoder_model.generator is None:
         raise ValueError(
-            "No pretrained model loaded. Provide --model_url or implement custom generator loading."
+            "No pretrained model loaded. Provide --model_name or implement custom generator loading."
         )
     
     # Create dataset
