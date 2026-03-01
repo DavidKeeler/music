@@ -14,7 +14,7 @@ class MusicGenerationModel(tf.keras.Model):
         
         Args:
             mel_generator: Trained MelGenerator model
-            vocoder: Finetuned HiFi-GAN vocoder
+            vocoder: Finetuned MelGAN vocoder
         """
         super().__init__()
         self.mel_generator = mel_generator
