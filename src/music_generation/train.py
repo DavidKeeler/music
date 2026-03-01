@@ -78,7 +78,7 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
     """Train the mel generator model."""
     
     print(f"Loading dataset from {data_dir}")
-    dataset = create_dataset(data_dir, cache_dir, batch_size, seq_len=SEQ_LEN)
+    dataset = create_dataset(data_dir, cache_dir, batch_size)
     
     steps_per_epoch = 100  # Adjust based on dataset size
     total_steps = steps_per_epoch * epochs

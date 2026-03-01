@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772398290-5df2
+> Unit tests use minimal mock models: SimpleGenerator/SimpleVocoder classes defined inline to avoid complex dependencies. Tests focus on interface contracts, not full integration.
+<!-- tags: testing, tensorflow | created: 2026-03-01 -->
+
 ### mem-1772397908-88bd
 > MelGAN vocoder integration: uses TFAutoModel.from_pretrained('tensorspeech/tts-melgan-ljspeech-en'), calls inference() method, outputs [batch, samples, 1] requiring squeeze to [batch, samples]
 <!-- tags: vocoder, tensorflow, melgan | created: 2026-03-01 -->
