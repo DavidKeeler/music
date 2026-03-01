@@ -40,7 +40,8 @@ class VocoderTraining(tf.keras.Model):
         grads = tape.gradient(loss, self.generator.trainable_variables)
         
         # Compute gradient norm
-        grad_norm = tf.sqrt(sum([tf.reduce_sum(g**2) for g in grads if g is not None]))
+        grad_squares = [tf.reduce_sum(g**2) for g in grads if g is not None]
+        grad_norm = tf.sqrt(tf.add_n(grad_squares)) if grad_squares else tf.constant(0.0)
         
         self.optimizer.apply_gradients(zip(grads, self.generator.trainable_variables))
         

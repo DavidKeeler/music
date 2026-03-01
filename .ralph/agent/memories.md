@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772397908-88bd
+> MelGAN vocoder integration: uses TFAutoModel.from_pretrained('tensorspeech/tts-melgan-ljspeech-en'), calls inference() method, outputs [batch, samples, 1] requiring squeeze to [batch, samples]
+<!-- tags: vocoder, tensorflow, melgan | created: 2026-03-01 -->
+
 ### mem-1772397744-50ee
 > Keras custom train_step pattern: add metrics as tf.keras.metrics.Mean in __init__, update in train_step, return dict with metric.result(), add @property metrics for auto-reset
 <!-- tags: tensorflow, keras, training | created: 2026-03-01 -->

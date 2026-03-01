@@ -70,3 +70,45 @@ Will create tasks for each step in the implementation order.
 **Commit:** a1061cf - "feat: switch checkpoint saving to SavedModel format"
 
 **Next priority task:** Update MelGAN loading and output handling (task-1772397682-41f5)
+
+## Iteration 4 - Task 4 Complete
+
+### Task: Create MusicGenerationModel inference class (task-1772397682-6020)
+
+**What was done:**
+- Verified that inference.py already exists with complete implementation
+- Updated docstring to reference MelGAN instead of HiFi-GAN for consistency
+- MusicGenerationModel wraps mel_generator + vocoder with:
+  - `generate()` method for autoregressive mel generation + vocoding
+  - `from_checkpoints()` class method supporting both .h5 and SavedModel formats
+- Implementation correctly uses `load_vocoder_from_checkpoint()` from vocoder.py
+
+**Verification:**
+- Syntax validation passed with `python3 -m py_compile`
+- Docstring now consistent with vocoder.py MelGAN implementation
+
+**Commit:** bd58110 - "docs: update MusicGenerationModel docstring to reference MelGAN"
+
+**Next priority task:** Add unit tests for new features (task-1772397682-79da)
+
+
+## Iteration 3 - Task 3 Complete
+
+### Task: Update MelGAN loading and output handling (task-1772397682-41f5)
+
+**What was done:**
+- Added `TensorFlowTTS>=1.0.0` to requirements.txt
+- Updated imports in vocoder.py to use `TFAutoModel` from TensorFlowTTS instead of tensorflow_hub
+- Updated `load_pretrained_vocoder()` to use `TFAutoModel.from_pretrained()` with default model "tensorspeech/tts-melgan-ljspeech-en"
+- Updated `HiFiGANVocoder.call()` to use `self.generator.inference()` method instead of direct call
+- Added squeeze operation to convert output from `[batch, samples, 1]` to `[batch, samples]`
+- Changed train_vocoder.py argument from `--model_url` to `--model_name` to match new API
+- Updated README.md to reflect MelGAN instead of HiFi-GAN in all references
+
+**Verification:**
+- Syntax validation passed with `python3 -m py_compile` for both vocoder.py and train_vocoder.py
+- All references to the old API updated consistently
+
+**Commit:** 53b07bc - "feat: integrate TensorFlowTTS MelGAN vocoder"
+
+**Next priority task:** Create MusicGenerationModel inference class (task-1772397682-6020)
