@@ -16,6 +16,7 @@ class VocoderTraining(tf.keras.Model):
         super().__init__()
         self.generator = generator
         self.stft_loss = stft_loss
+        self.grad_norm_tracker = tf.keras.metrics.Mean(name="grad_norm")
     
     def call(self, mel_spectrogram, training=False):
         return self.generator(mel_spectrogram, training=training)
@@ -37,9 +38,20 @@ class VocoderTraining(tf.keras.Model):
         
         # Compute gradients and update
         grads = tape.gradient(loss, self.generator.trainable_variables)
+        
+        # Compute gradient norm
+        grad_norm = tf.sqrt(sum([tf.reduce_sum(g**2) for g in grads if g is not None]))
+        
         self.optimizer.apply_gradients(zip(grads, self.generator.trainable_variables))
         
-        return {"loss": loss}
+        # Update metrics
+        self.grad_norm_tracker.update_state(grad_norm)
+        
+        return {"loss": loss, "grad_norm": self.grad_norm_tracker.result()}
+    
+    @property
+    def metrics(self):
+        return [self.grad_norm_tracker]
 
 
 def train_vocoder(
