@@ -99,7 +99,7 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
         base_model.load_weights(resume_from)
     
     callbacks = [
-        tf.keras.callbacks.ModelCheckpoint(checkpoint_path, save_weights_only=False, save_best_only=True),
+        tf.keras.callbacks.ModelCheckpoint(str(checkpoint_path), save_weights_only=False, save_best_only=True),
         tf.keras.callbacks.TensorBoard(log_dir=checkpoint_dir / "logs"),
     ]
     

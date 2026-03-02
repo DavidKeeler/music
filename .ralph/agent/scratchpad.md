@@ -40,3 +40,22 @@ Verified that VocoderTraining already has gradient norm logging fully implemente
 - ✅ @property metrics returning [self.grad_norm_tracker]
 
 No changes needed. Task closed.
+
+
+## Task 2: SavedModel Format - COMPLETE
+
+Verified that SavedModel checkpoint format is already fully implemented:
+- ✅ train.py: ModelCheckpoint with save_weights_only=False
+- ✅ train_vocoder.py: ModelCheckpoint with save_weights_only=False
+- ✅ vocoder.py: load_vocoder_from_checkpoint() supports both .h5 and SavedModel
+- ✅ inference.py: from_checkpoints() supports both .h5 and SavedModel
+
+The implementation already saves full models (not just weights) in SavedModel format, which includes:
+- Model architecture
+- Trained weights
+- Optimizer state (for resuming training)
+- Custom objects and layers
+
+Checkpoint paths are converted to strings for compatibility with SavedModel directory format.
+
+No changes needed. Task verified complete.
