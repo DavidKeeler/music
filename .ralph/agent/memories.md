@@ -2,6 +2,26 @@
 
 ## Patterns
 
+### mem-1772412522-b88c
+> MusicGenerationModel test coverage: test_music_generation_model_initialization (init), test_music_generation_model_call (forward pass), test_music_generation_model_generate (autoregressive), test_checkpoint_save_and_load (from_checkpoints)
+<!-- tags: testing, tensorflow, inference | created: 2026-03-02 -->
+
+### mem-1772412464-6ef7
+> test_checkpoint_save_and_load smoke test: creates minimal models, saves as SavedModel, loads via MusicGenerationModel.from_checkpoints(), verifies generate() output
+<!-- tags: testing, tensorflow, checkpoints | created: 2026-03-02 -->
+
+### mem-1772412365-7318
+> MusicGenerationModel inference class: combines mel_generator + vocoder, has call() for forward pass and generate() for autoregressive generation, from_checkpoints() supports both .h5 and SavedModel formats
+<!-- tags: inference, tensorflow | created: 2026-03-02 -->
+
+### mem-1772412282-5ea2
+> MelGAN vocoder already fully implemented: uses TFAutoModel.from_pretrained('tensorspeech/tts-melgan-ljspeech-en'), calls inference() method, squeezes output from [batch, samples, 1] to [batch, samples], handles shape conversion to [batch, time, 80]
+<!-- tags: vocoder, melgan, tensorflow | created: 2026-03-02 -->
+
+### mem-1772412210-da12
+> SavedModel format: ModelCheckpoint uses save_weights_only=False to save full model (architecture + weights + optimizer state). Checkpoint paths must be strings for directory format. Loading functions support both .h5 and SavedModel via Path.suffix check.
+<!-- tags: tensorflow, checkpoints, savedmodel | created: 2026-03-02 -->
+
 ### mem-1772412097-3f5b
 > VocoderTraining already has gradient norm logging: grad_norm_tracker metric, computes L2 norm in train_step, returns in result dict, has metrics property
 <!-- tags: vocoder, training, tensorflow | created: 2026-03-02 -->
