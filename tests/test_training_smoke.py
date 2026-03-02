@@ -1,9 +1,12 @@
 """Smoke tests for training scripts."""
 import tensorflow as tf
 import numpy as np
+import tempfile
+from pathlib import Path
 from src.music_generation.train import MelGeneratorTraining
 from src.music_generation.train_vocoder import VocoderTraining
 from src.music_generation.model import MelGenerator
+from src.music_generation.inference import MusicGenerationModel
 
 
 def test_mel_generator_training_smoke():
@@ -47,3 +50,47 @@ def test_vocoder_training_smoke():
     assert "grad_norm" in result
     assert not tf.math.is_nan(result["loss"])
     assert not tf.math.is_nan(result["grad_norm"])
+
+
+def test_checkpoint_save_and_load():
+    """Smoke test: save and load SavedModel checkpoint."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create minimal models
+        class SimpleGenerator(tf.keras.Model):
+            def __init__(self):
+                super().__init__()
+                self.dense = tf.keras.layers.Dense(80)
+            
+            def call(self, x, training=False):
+                return self.dense(x)
+        
+        class SimpleVocoder(tf.keras.Model):
+            def __init__(self):
+                super().__init__()
+                self.dense = tf.keras.layers.Dense(22050)
+            
+            def call(self, mel, training=False):
+                return self.dense(mel[:, 0, :])
+        
+        # Create and save models
+        mel_gen = SimpleGenerator()
+        vocoder = SimpleVocoder()
+        
+        mel_checkpoint = Path(tmpdir) / "mel_gen"
+        vocoder_checkpoint = Path(tmpdir) / "vocoder"
+        
+        mel_gen.save(str(mel_checkpoint))
+        vocoder.save(str(vocoder_checkpoint))
+        
+        # Load via MusicGenerationModel
+        model = MusicGenerationModel.from_checkpoints(
+            str(mel_checkpoint),
+            str(vocoder_checkpoint)
+        )
+        
+        # Verify it works
+        seed_mel = tf.random.normal([10, 80])
+        audio = model.generate(seed_mel, num_frames=5)
+        
+        assert len(audio.shape) == 1
+        assert audio.shape[0] > 0
