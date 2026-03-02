@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772412097-3f5b
+> VocoderTraining already has gradient norm logging: grad_norm_tracker metric, computes L2 norm in train_step, returns in result dict, has metrics property
+<!-- tags: vocoder, training, tensorflow | created: 2026-03-02 -->
+
 ### mem-1772398290-5df2
 > Unit tests use minimal mock models: SimpleGenerator/SimpleVocoder classes defined inline to avoid complex dependencies. Tests focus on interface contracts, not full integration.
 <!-- tags: testing, tensorflow | created: 2026-03-01 -->
