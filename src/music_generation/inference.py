@@ -20,6 +20,20 @@ class MusicGenerationModel(tf.keras.Model):
         self.mel_generator = mel_generator
         self.vocoder = vocoder
     
+    def call(self, inputs, training=False):
+        """Forward pass: mel generation + vocoding.
+        
+        Args:
+            inputs: Input tensor for mel generator
+            training: Whether in training mode
+            
+        Returns:
+            Audio waveform
+        """
+        mel = self.mel_generator(inputs, training=training)
+        audio = self.vocoder(mel, training=training)
+        return audio
+    
     def generate(
         self,
         seed_mel: tf.Tensor,
