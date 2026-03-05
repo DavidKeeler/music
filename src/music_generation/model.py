@@ -1,7 +1,7 @@
 """Mel generator model."""
 
 import tensorflow as tf
-from src.music_generation.config import D_MODEL, NUM_LAYERS, NUM_HEADS, SEQ_LEN, N_MELS
+from src.music_generation.config import D_MODEL, NUM_HEADS, SEQ_LEN, N_MELS, WINDOW_SIZES
 from src.music_generation.layers import CausalConvBlock, TransformerBlock
 
 
@@ -11,7 +11,7 @@ class MelGenerator(tf.keras.Model):
     Architecture (strictly causal):
     - Input projection: Dense(N_MELS -> D_MODEL)
     - 2 causal conv layers (kernel_size=3, with residual connections)
-    - NUM_LAYERS transformer blocks (local window attention + FFN)
+    - 3 transformer blocks with increasing window sizes (128, 256, 512)
     - 1 causal conv head (kernel_size=3, with residual connection)
     - Output projection: Dense(D_MODEL -> N_MELS)
     
@@ -29,10 +29,10 @@ class MelGenerator(tf.keras.Model):
         self.conv1 = CausalConvBlock(D_MODEL, kernel_size=3, residual=True)
         self.conv2 = CausalConvBlock(D_MODEL, kernel_size=3, residual=True)
         
-        # Transformer stack
-        self.transformer_blocks = [
-            TransformerBlock(D_MODEL, NUM_HEADS) for _ in range(NUM_LAYERS)
-        ]
+        # Transformer stack with explicit layers and increasing window sizes
+        self.transformer1 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[0])
+        self.transformer2 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[1])
+        self.transformer3 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[2])
         
         # Conv head
         self.conv_head = CausalConvBlock(D_MODEL, kernel_size=3, residual=True)
@@ -58,8 +58,9 @@ class MelGenerator(tf.keras.Model):
         x = self.conv2(x, training=training)
         
         # Transformer stack: [B, T, D] -> [B, T, D]
-        for block in self.transformer_blocks:
-            x = block(x, training=training)
+        x = self.transformer1(x)
+        x = self.transformer2(x)
+        x = self.transformer3(x)
         
         # Conv head: [B, T, D] -> [B, T, D]
         x = self.conv_head(x, training=training)
