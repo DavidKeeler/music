@@ -34,10 +34,10 @@ VOCODER_LR = 1e-4
 D_MODEL = 128
 # Number of attention heads
 NUM_HEADS = 4
-# Number of transformer layers (start with 1, scale to 4-8)
-NUM_LAYERS = 1
-# Local attention window size in frames
-WINDOW_SIZE = 128
+# Number of transformer layers
+NUM_LAYERS = 3
+# Local attention window sizes per layer
+WINDOW_SIZES = [128, 256, 512]
 
 # Training Parameters
 # Batch size for training (reduced to 4 for memory optimization)
