@@ -64,7 +64,7 @@ class CausalConvBlock(tf.keras.layers.Layer):
 
 
 class LocalWindowAttention(tf.keras.layers.Layer):
-    """Local window causal multi-head attention."""
+    """Local window causal multi-head attention with relative position bias."""
     
     def __init__(self, d_model, num_heads, window_size=128, **kwargs):
         super().__init__(**kwargs)
@@ -77,9 +77,17 @@ class LocalWindowAttention(tf.keras.layers.Layer):
         
         self.qkv = tf.keras.layers.Dense(3 * d_model)
         self.out_proj = tf.keras.layers.Dense(d_model)
+        
+        # Learned relative position bias [num_heads, window_size]
+        self.relative_position_bias = self.add_weight(
+            name='relative_position_bias',
+            shape=[num_heads, window_size],
+            initializer=tf.random_normal_initializer(stddev=0.01),
+            trainable=True
+        )
     
     def call(self, x):
-        """Apply local window causal attention.
+        """Apply local window causal attention with relative position bias.
         
         Args:
             x: Input tensor [batch, seq_len, d_model]
@@ -99,15 +107,19 @@ class LocalWindowAttention(tf.keras.layers.Layer):
         # Compute attention scores
         scores = tf.matmul(q, k, transpose_b=True) / math.sqrt(self.head_dim)  # [B, H, T, T]
         
+        # Add relative position bias
+        positions = tf.range(T)
+        rel_distances = positions[:, None] - positions[None, :]  # [T, T]
+        rel_distances = tf.clip_by_value(rel_distances, 0, self.window_size - 1)
+        bias = tf.gather(self.relative_position_bias, rel_distances, axis=1)  # [H, T, T]
+        scores = scores + bias[None, :, :, :]  # [B, H, T, T]
+        
         # Create causal mask
         causal_mask = tf.linalg.band_part(tf.ones([T, T]), -1, 0)
         causal_mask = 1.0 - causal_mask
         
         # Create window mask
-        indices = tf.range(T)
-        row_indices = tf.expand_dims(indices, 1)
-        col_indices = tf.expand_dims(indices, 0)
-        window_mask = tf.cast(row_indices - col_indices >= self.window_size, tf.float32)
+        window_mask = tf.cast(positions[:, None] - positions[None, :] >= self.window_size, tf.float32)
         
         # Combine masks
         mask = tf.maximum(causal_mask, window_mask)
