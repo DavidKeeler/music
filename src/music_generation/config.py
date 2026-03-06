@@ -49,11 +49,6 @@ LEARNING_RATE = 1e-4
 # Number of training epochs (reduced from 20 to 3 for faster iteration on CPU)
 NUM_EPOCHS = 3
 
-# Teacher Forcing Parameters
-INITIAL_TF_RATIO = 1.0
-TF_DECAY_K = 1e-5
-MIN_TF_RATIO = 0.05
-
 # Inference Parameters
 # Temperature for sampling (1.0 = no scaling)
 TEMPERATURE = 1.0
