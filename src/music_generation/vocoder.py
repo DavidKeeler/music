@@ -178,6 +178,6 @@ class VocoderDataset:
             dataset = dataset.shuffle(1000)
         
         dataset = dataset.batch(batch_size)
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
+        dataset = dataset.prefetch(2)
         
         return dataset

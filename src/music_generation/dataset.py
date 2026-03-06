@@ -176,6 +176,6 @@ def create_dataset(data_dir: str, cache_dir: str, batch_size: int, shuffle: bool
         ds = ds.shuffle(1000)
     
     ds = ds.batch(batch_size)
-    ds = ds.prefetch(tf.data.AUTOTUNE)
+    ds = ds.prefetch(2)
     
     return ds
