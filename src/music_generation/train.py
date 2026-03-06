@@ -1,5 +1,6 @@
 """Training script with teacher forcing for mel generator."""
 import argparse
+import logging
 import tensorflow as tf
 from pathlib import Path
 
@@ -10,6 +11,17 @@ from .config import (
 )
 from .dataset import create_dataset
 from .model import MelGenerator
+
+logger = logging.getLogger(__name__)
+
+
+def configure_memory():
+    """Configure TensorFlow memory settings for resource-constrained environments."""
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        logger.info(f"Enabled memory growth for {len(gpus)} GPU(s)")
 
 
 class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -109,6 +121,8 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
 
 
 def main():
+    configure_memory()
+    
     parser = argparse.ArgumentParser(description="Train mel generator")
     parser.add_argument('--data_dir', type=Path, default=DATA_DIR)
     parser.add_argument('--cache_dir', type=Path, default=CACHE_DIR)
