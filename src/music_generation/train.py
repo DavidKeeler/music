@@ -3,6 +3,7 @@ import argparse
 import logging
 import tensorflow as tf
 from pathlib import Path
+import psutil
 
 from .config import (
     DATA_DIR, CACHE_DIR, CHECKPOINT_DIR,
@@ -22,6 +23,23 @@ def configure_memory():
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
         logger.info(f"Enabled memory growth for {len(gpus)} GPU(s)")
+
+
+def check_batch_size(batch_size):
+    """Warn if batch size is too large for available system memory."""
+    ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+    
+    if batch_size > 8 and ram_gb < 16:
+        if ram_gb < 8:
+            suggested = 2
+        else:
+            suggested = 4
+        
+        logger.warning(
+            f"Batch size {batch_size} may be too large for {ram_gb:.1f}GB RAM. "
+            f"Consider using batch_size={suggested} to avoid OOM errors."
+        )
+
 
 
 class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -92,6 +110,8 @@ class MelGeneratorTraining(tf.keras.Model):
 def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE, 
           epochs=NUM_EPOCHS, lr=LEARNING_RATE, resume_from=None):
     """Train the mel generator model."""
+    
+    check_batch_size(batch_size)
     
     print(f"Loading dataset from {data_dir}")
     dataset = create_dataset(data_dir, cache_dir, batch_size)
