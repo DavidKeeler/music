@@ -69,19 +69,25 @@ class MusicNetDataset:
                     self.sequence_indices.append((file_idx, start))
     
     def _compute_statistics(self):
-        """Compute global mean and std from all audio files."""
-        all_mels = []
+        """Compute global mean and std from all audio files using streaming computation."""
+        total_sum = 0.0
+        total_sum_sq = 0.0
+        total_count = 0
         
         for audio_file in self.audio_files:
             logger.info(f"Processing {audio_file.name}")
             waveform = load_audio(audio_file)
             mel = audio_to_mel(waveform)
-            all_mels.append(mel)
+            
+            # Accumulate statistics without storing all data
+            total_sum += tf.reduce_sum(mel).numpy()
+            total_sum_sq += tf.reduce_sum(tf.square(mel)).numpy()
+            total_count += tf.size(mel).numpy()
         
-        # Concatenate all mels and compute statistics
-        all_mels_tensor = tf.concat(all_mels, axis=0)
-        mean = tf.reduce_mean(all_mels_tensor).numpy()
-        std = tf.math.reduce_std(all_mels_tensor).numpy()
+        # Compute mean and std from accumulated values
+        mean = total_sum / total_count
+        variance = (total_sum_sq / total_count) - (mean ** 2)
+        std = variance ** 0.5
         
         logger.info(f"Computed statistics: mean={mean:.4f}, std={std:.4f}")
         return mean, std
