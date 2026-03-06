@@ -48,24 +48,18 @@ def test_training_multiple_steps():
         assert loss > 0
 
 
-def test_teacher_forcing_ratio_decay():
-    """Verify teacher forcing ratio decays over training steps."""
+def test_parallel_training_shapes():
+    """Verify parallel training produces correct shapes."""
     model = MelGenerator()
-    training_model = MelGeneratorTraining(
-        model, initial_tf_ratio=1.0, decay_k=1e-3, min_ratio=0.05
-    )
+    training_model = MelGeneratorTraining(model)
     training_model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
     
     batch_size, seq_len = 2, 64
     x = tf.random.normal([batch_size, seq_len, N_MELS])
     y = x
     
-    ratios = []
-    for _ in range(10):
-        result = training_model.train_step((x, y))
-        ratios.append(result["tf_ratio"].numpy())
+    # Run forward pass
+    preds = training_model(x, training=True)
     
-    # Verify ratio decreases
-    assert ratios[0] > ratios[-1]
-    # Verify ratio stays above minimum
-    assert all(r >= 0.05 for r in ratios)
+    # Verify output shape matches input
+    assert preds.shape == x.shape

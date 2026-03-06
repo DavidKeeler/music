@@ -12,14 +12,16 @@ from src.music_generation.inference import MusicGenerationModel
 def test_mel_generator_training_smoke():
     """Smoke test: MelGeneratorTraining can run one training step."""
     mel_gen = MelGenerator(d_model=64, num_heads=2, num_layers=2, d_ff=128)
-    training_model = MelGeneratorTraining(mel_gen, initial_tf_ratio=1.0, tf_decay_k=1e-5, min_tf_ratio=0.05)
+    training_model = MelGeneratorTraining(mel_gen)
+    training_model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
     
     # Synthetic batch
     batch_size, seq_len, mel_dim = 2, 10, 80
     x = tf.random.normal([batch_size, seq_len, mel_dim])
+    y = x
     
     # Run one training step
-    result = training_model.train_step(x)
+    result = training_model.train_step((x, y))
     
     assert "loss" in result
     assert not tf.math.is_nan(result["loss"])

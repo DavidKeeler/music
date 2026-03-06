@@ -7,8 +7,7 @@ import psutil
 
 from .config import (
     DATA_DIR, CACHE_DIR, CHECKPOINT_DIR,
-    BATCH_SIZE, SEQ_LEN, LEARNING_RATE, NUM_EPOCHS,
-    INITIAL_TF_RATIO, TF_DECAY_K, MIN_TF_RATIO
+    BATCH_SIZE, SEQ_LEN, LEARNING_RATE, NUM_EPOCHS
 )
 from .dataset import create_dataset
 from .model import MelGenerator
@@ -62,49 +61,38 @@ class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
 
 class MelGeneratorTraining(tf.keras.Model):
-    """Training wrapper with teacher forcing."""
+    """Simplified training wrapper with parallel processing."""
     
-    def __init__(self, base_model, initial_tf_ratio=INITIAL_TF_RATIO, 
-                 decay_k=TF_DECAY_K, min_ratio=MIN_TF_RATIO, context_len=64):
+    def __init__(self, base_model):
         super().__init__()
         self.base_model = base_model
-        self.initial_tf_ratio = initial_tf_ratio
-        self.decay_k = decay_k
-        self.min_ratio = min_ratio
-        self.context_len = context_len
     
-    def compute_tf_ratio(self):
-        step = tf.cast(self.optimizer.iterations, tf.float32)
-        ratio = self.initial_tf_ratio * tf.exp(-self.decay_k * step)
-        return tf.maximum(self.min_ratio, ratio)
+    def call(self, inputs, training=False):
+        return self.base_model(inputs, training=training)
     
     def train_step(self, data):
         x, y = data
-        batch_size = tf.shape(x)[0]
-        seq_len = tf.shape(x)[1]
-        tf_ratio = self.compute_tf_ratio()
+        
+        # Shape validation
+        tf.debugging.assert_equal(tf.shape(x), tf.shape(y))
         
         with tf.GradientTape() as tape:
-            ar_input = x[:, :1, :]
-            preds = []
+            preds = self.base_model(x, training=True)
             
-            for t in range(1, seq_len):
-                pred = self.base_model(ar_input, training=True)[:, -1:, :]
-                preds.append(pred)
-                use_teacher = tf.random.uniform([batch_size, 1, 1]) < tf_ratio
-                next_input = tf.where(use_teacher, x[:, t:t+1, :], pred)
-                ar_input = tf.concat([ar_input, next_input], axis=1)
-                # Truncate to context_len to prevent O(n²) memory growth
-                if tf.shape(ar_input)[1] > self.context_len:
-                    ar_input = ar_input[:, -self.context_len:, :]
+            # Validate prediction shape
+            tf.debugging.assert_equal(tf.shape(preds), tf.shape(x))
             
-            pred_seq = tf.concat(preds, axis=1)
-            loss = tf.reduce_mean(tf.abs(pred_seq - y[:, 1:, :]))
+            # Loss: compare predictions at t with targets at t+1
+            loss = tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))
+            
+            # NaN detection
+            if tf.math.is_nan(loss) or tf.math.is_inf(loss):
+                tf.print("⚠️  WARNING: NaN/Inf loss detected!")
         
         grads = tape.gradient(loss, self.base_model.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
         
-        return {"loss": loss, "tf_ratio": tf_ratio}
+        return {"loss": loss}
 
 
 def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE, 
@@ -125,6 +113,7 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
     base_model = MelGenerator()
     model = MelGeneratorTraining(base_model)
     model.compile(optimizer=optimizer)
+    model.summary()
     
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
