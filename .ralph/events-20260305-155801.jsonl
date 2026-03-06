@@ -1,0 +1,2 @@
+{"ts":"2026-03-05T15:58:01.349054+00:00","iteration":0,"hat":"loop","topic":"task.start","triggered":"planner","payload":"specs/update-simple-audio-model/PROMPT.md"}
+{"payload":"task-1772726322-657c: causality and window constraint tests complete, all 6 tests pass","topic":"task.done","ts":"2026-03-05T16:06:34.710842+00:00"}

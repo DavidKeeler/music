@@ -2,6 +2,7 @@
 
 import tensorflow as tf
 import soundfile as sf
+import librosa
 import numpy as np
 
 from .config import (
@@ -45,7 +46,7 @@ def load_audio(path: str) -> tf.Tensor:
     # Resample if needed
     if sr != SAMPLE_RATE:
         waveform = tf.numpy_function(
-            lambda x: sf.resample(x.numpy(), sr, SAMPLE_RATE),
+            lambda x: librosa.resample(x, orig_sr=sr, target_sr=SAMPLE_RATE),
             [waveform],
             tf.float32
         )

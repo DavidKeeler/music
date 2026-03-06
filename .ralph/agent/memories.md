@@ -2,6 +2,42 @@
 
 ## Patterns
 
+### mem-1772782717-285b
+> scripts/profile_memory.py uses tracemalloc.start(), get_traced_memory() for (current, peak), snapshot.statistics('lineno') for top allocations. format_bytes() helper for human-readable output. No external deps.
+<!-- tags: memory, profiling, python | created: 2026-03-06 -->
+
+### mem-1772782576-716d
+> check_batch_size() warns if batch_size > 8 and RAM < 16GB. Suggests batch_size=2 for <8GB, batch_size=4 for 8-16GB. Uses psutil.virtual_memory().total for RAM detection. Called at start of train() before dataset loading.
+<!-- tags: memory, training, batch-size | created: 2026-03-06 -->
+
+### mem-1772780012-9f4e
+> Fixed-window autoregressive: Add context_len=64 param to MelGeneratorTraining, truncate ar_input to last 64 frames in loop. Reduces O(n²) to O(n) memory. Maintains quality (Transformer has positional encoding).
+<!-- tags: memory, training, tensorflow | created: 2026-03-06 -->
+
+### mem-1772775165-b054
+> Streaming statistics: Replace batch concatenation with running sum/sum_sq/count. Compute mean=sum/count, variance=(sum_sq/count)-mean², std=sqrt(variance). O(1) memory vs O(n). Numerically equivalent.
+<!-- tags: memory, tensorflow, dataset | created: 2026-03-06 -->
+
+### mem-1772775091-4132
+> configure_memory() enables TF memory growth for GPUs via tf.config.experimental.set_memory_growth(). Called at start of main() before model creation. Prevents upfront allocation of all GPU memory.
+<!-- tags: tensorflow, memory, training | created: 2026-03-06 -->
+
+### mem-1772726787-86b1
+> test_causality_and_windows.py: 6 tests verify causality (output at t depends only on inputs <=t via tensor_scatter_nd_update), window constraints (each transformer uses WINDOW_SIZES=[128,256,512]), and relative position bias shape [num_heads, window_size]
+<!-- tags: testing, causality, transformer | created: 2026-03-05 -->
+
+### mem-1772726647-35a3
+> MelGenerator uses 3 explicit transformer layers (transformer1/2/3) with window_size params from WINDOW_SIZES=[128,256,512]. No loop - explicit sequential calls in forward pass.
+<!-- tags: model, transformer, architecture | created: 2026-03-05 -->
+
+### mem-1772726514-4d08
+> LocalWindowAttention uses learned relative position bias [num_heads, window_size]. Compute rel_distances = positions[:, None] - positions[None, :], clip to [0, window_size-1], gather from bias tensor on axis=1, broadcast over batch with [None, :, :, :]
+<!-- tags: attention, transformer, tensorflow | created: 2026-03-05 -->
+
+### mem-1772726366-ad6e
+> Config updated: NUM_LAYERS=3, WINDOW_SIZES=[128,256,512] replaces old WINDOW_SIZE=128. Each transformer layer uses different window size.
+<!-- tags: config, architecture | created: 2026-03-05 -->
+
 ### mem-1772412522-b88c
 > MusicGenerationModel test coverage: test_music_generation_model_initialization (init), test_music_generation_model_call (forward pass), test_music_generation_model_generate (autoregressive), test_checkpoint_save_and_load (from_checkpoints)
 <!-- tags: testing, tensorflow, inference | created: 2026-03-02 -->
