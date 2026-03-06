@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-02 00:49:10 UTC_
+_Generated: 2026-03-06 07:39:42 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** 45ff6ee: chore: auto-commit before merge (loop primary)
+- **HEAD:** 9921e3b: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -35,29 +35,47 @@ _Generated: 2026-03-02 00:49:10 UTC_
 - [x] Create MusicGenerationModel inference class
 - [x] Add unit tests for new components
 - [x] Add smoke tests for training pipeline
+- [x] Update config.py with NUM_LAYERS=3 and WINDOW_SIZES=[128,256,512]
+- [x] Add relative position bias to LocalWindowAttention
+- [x] Update MelGenerator with 3 explicit transformer layers
+- [x] Test causality and window constraints
+- [x] Add TensorFlow memory configuration
+- [x] Implement streaming statistics computation
+- [x] Add fixed-window autoregressive loop
+- [x] Add batch size warning
+- [x] Create memory profiling script
 
+### Remaining
+
+- [ ] Verify training compatibility _(blocked by: task-1772726322-657c)_
 
 ## Key Files
 
 Recently modified:
 
+- `.gitignore`
+- `.ralph/agent/handoff.md`
 - `.ralph/agent/memories.md`
 - `.ralph/agent/scratchpad.md`
 - `.ralph/agent/summary.md`
 - `.ralph/agent/tasks.jsonl`
 - `.ralph/current-events`
 - `.ralph/current-loop-id`
-- `.ralph/events-20260302-004027.jsonl`
-- `.ralph/history.jsonl`
-- `.ralph/loop.lock`
-- `specs/update-simple-audio-model/PROMPT.md`
+- `.ralph/events-20260305-155728.jsonl`
+- `.ralph/events-20260305-155801.jsonl`
 
 ## Next Session
 
-Session completed successfully. No pending work.
-
-**Original objective:**
+The following prompt can be used to continue where this session left off:
 
 ```
-specs/tf-pretrained-vocoder-finetuning/PROMPT.md
+Continue the previous work. Remaining tasks (1):
+- Verify training compatibility
+
+Original objective: # Objective
+Fix memory issues in TensorFlow music generation training to enable training on MacBook Air with limited RAM.
+
+# Context
+Training script experiences OOM errors due to:
+- O(n²) memory grow...
 ```

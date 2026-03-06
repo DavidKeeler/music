@@ -2,6 +2,22 @@
 
 ## Patterns
 
+### mem-1772814961-0a07
+> test_parallel_training.py: 3 tests verify parallel training - test_train_step_shapes (correct shapes), test_single_forward_pass (single pass not loop), test_loss_decreases (convergence). Uses SimpleMelGenerator mock to avoid dependencies.
+<!-- tags: testing, parallel-training | created: 2026-03-06 -->
+
+### mem-1772814831-fa94
+> Fixed prefetch value (2) replaces AUTOTUNE for predictable memory behavior. Applied to both dataset.py and vocoder.py dataset pipelines.
+<!-- tags: dataset, memory, tensorflow | created: 2026-03-06 -->
+
+### mem-1772814706-5076
+> scripts/profile_memory.py calls train() with only essential params: data_dir, cache_dir, checkpoint_dir, epochs, batch_size. No teacher forcing params needed for parallel training.
+<!-- tags: profiling, training | created: 2026-03-06 -->
+
+### mem-1772814618-c42c
+> Parallel Transformer training: Single forward pass with causal masking replaces autoregressive loop. Loss compares preds[:, :-1, :] with y[:, 1:, :]. Memory scales O(model) not O(seq_len × model). ~100x improvement.
+<!-- tags: training, transformer, memory | created: 2026-03-06 -->
+
 ### mem-1772782717-285b
 > scripts/profile_memory.py uses tracemalloc.start(), get_traced_memory() for (current, peak), snapshot.statistics('lineno') for top allocations. format_bytes() helper for human-readable output. No external deps.
 <!-- tags: memory, profiling, python | created: 2026-03-06 -->
