@@ -47,12 +47,13 @@ class MelGeneratorTraining(tf.keras.Model):
     """Training wrapper with teacher forcing."""
     
     def __init__(self, base_model, initial_tf_ratio=INITIAL_TF_RATIO, 
-                 decay_k=TF_DECAY_K, min_ratio=MIN_TF_RATIO):
+                 decay_k=TF_DECAY_K, min_ratio=MIN_TF_RATIO, context_len=64):
         super().__init__()
         self.base_model = base_model
         self.initial_tf_ratio = initial_tf_ratio
         self.decay_k = decay_k
         self.min_ratio = min_ratio
+        self.context_len = context_len
     
     def compute_tf_ratio(self):
         step = tf.cast(self.optimizer.iterations, tf.float32)
@@ -75,6 +76,9 @@ class MelGeneratorTraining(tf.keras.Model):
                 use_teacher = tf.random.uniform([batch_size, 1, 1]) < tf_ratio
                 next_input = tf.where(use_teacher, x[:, t:t+1, :], pred)
                 ar_input = tf.concat([ar_input, next_input], axis=1)
+                # Truncate to context_len to prevent O(n²) memory growth
+                if tf.shape(ar_input)[1] > self.context_len:
+                    ar_input = ar_input[:, -self.context_len:, :]
             
             pred_seq = tf.concat(preds, axis=1)
             loss = tf.reduce_mean(tf.abs(pred_seq - y[:, 1:, :]))
