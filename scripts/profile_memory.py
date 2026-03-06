@@ -14,7 +14,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.music_generation.train import train
-import src.music_generation.config as config
 
 
 def format_bytes(size):
@@ -48,10 +47,7 @@ def profile_training(args):
             cache_dir=args.cache_dir,
             checkpoint_dir=args.checkpoint_dir,
             epochs=args.epochs,
-            batch_size=args.batch_size,
-            initial_tf_ratio=args.initial_tf_ratio,
-            tf_decay_k=args.tf_decay_k,
-            min_tf_ratio=args.min_tf_ratio
+            batch_size=args.batch_size
         )
         
         # Get peak memory
@@ -85,12 +81,6 @@ def main():
                         help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, default=4,
                         help='Batch size for training')
-    parser.add_argument('--initial_tf_ratio', type=float, default=config.INITIAL_TF_RATIO,
-                        help='Initial teacher forcing ratio')
-    parser.add_argument('--tf_decay_k', type=float, default=config.TF_DECAY_K,
-                        help='Teacher forcing decay rate')
-    parser.add_argument('--min_tf_ratio', type=float, default=config.MIN_TF_RATIO,
-                        help='Minimum teacher forcing ratio')
     
     args = parser.parse_args()
     profile_training(args)
