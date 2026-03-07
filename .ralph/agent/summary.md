@@ -1,8 +1,8 @@
 # Loop Summary
 
 **Status:** Completed successfully
-**Iterations:** 2
-**Duration:** 10m 12s
+**Iterations:** 5
+**Duration:** 15m 52s
 
 ## Tasks
 
@@ -14,4 +14,4 @@ _No events recorded._
 
 ## Final Commit
 
-b2630a4: fix: replace tf.signal.frame with tf.gather to avoid Metal crash on Apple Silicon
+a95a208: Fix test_checkpoint_save_and_load to use .weights.h5 extension

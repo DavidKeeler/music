@@ -1,8 +1,74 @@
 # MelGAN Vocoder Setup & Testing Plan
 
-## Overview
+## ⚠️ CURRENT STATUS: VOCODER NOT AVAILABLE
 
-Set up MelGAN vocoder from TensorFlowTTS for mel-to-audio conversion in conducting3. This keeps the stack pure TensorFlow (no PyTorch mixing).
+**Issue:** TensorFlowTTS is unmaintained and has broken dependencies (invalid `tensorflow-gpu` requirement syntax). It cannot be installed on modern Python/pip versions.
+
+**Impact:**
+- ✅ **Mel generator training works** - vocoder not needed for training
+- ❌ **Vocoder training not available** - `train_vocoder.py` will fail
+- ❌ **Audio generation not available** - cannot convert mel spectrograms to audio
+
+**Workarounds:**
+1. **For training:** Continue training mel generator without vocoder - save mel spectrograms only
+2. **For inference:** Use PyTorch-based vocoder (Vocos) or Griffin-Lim algorithm
+3. **For evaluation:** Compare mel spectrograms directly instead of audio
+
+## Alternative Solutions
+
+### Option 1: Use PyTorch Vocos (Recommended)
+
+Vocos is a modern, maintained vocoder that's faster and higher quality than MelGAN.
+
+```bash
+pip install torch vocos
+```
+
+Update `vocoder.py` to use Vocos:
+```python
+import torch
+from vocos import Vocos
+
+class VocosWrapper:
+    def __init__(self):
+        self.vocos = Vocos.from_pretrained("charactr/vocos-mel-24khz")
+    
+    def __call__(self, mel_spectrogram):
+        # Convert TF tensor to PyTorch
+        mel_torch = torch.from_numpy(mel_spectrogram.numpy())
+        audio = self.vocos.decode(mel_torch)
+        return audio.numpy()
+```
+
+### Option 2: Use Griffin-Lim (No dependencies)
+
+Fast but lower quality reconstruction using only scipy/numpy:
+
+```python
+import librosa
+
+def griffin_lim_vocoder(mel_spectrogram, n_iter=32):
+    """Convert mel to audio using Griffin-Lim algorithm."""
+    # Inverse mel filterbank
+    linear_spec = librosa.feature.inverse.mel_to_stft(
+        mel_spectrogram, sr=22050, n_fft=1024
+    )
+    # Griffin-Lim phase reconstruction
+    audio = librosa.griffinlim(linear_spec, n_iter=n_iter, hop_length=256)
+    return audio
+```
+
+### Option 3: Wait for TensorFlow vocoder
+
+Monitor these projects for TensorFlow-native vocoders:
+- Vocos TensorFlow port (not yet available)
+- TensorFlowTTS fork/fix (community may fix it)
+
+---
+
+## Original Documentation (For Reference)
+
+The sections below describe the original TensorFlowTTS setup, which is currently non-functional.
 
 ## Setup Instructions
 
