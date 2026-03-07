@@ -134,6 +134,10 @@
 
 ## Fixes
 
+### mem-1772907778-0464
+> tf.signal.frame crashes on Apple Silicon Metal with 'New volume mismatch' error. Use tf.gather + tf.einsum instead for windowed operations. Vectorized gather with indices = tf.range(T)[:, None] + tf.range(window_size)[None, :] works correctly.
+<!-- tags: tensorflow, metal, apple-silicon | created: 2026-03-07 -->
+
 ### mem-1772302816-36ab
 > Python 3.14 too new for TensorFlow. Need Python 3.9-3.12 for tensorflow-macos on Apple Silicon. Use pyenv or conda to manage Python versions.
 <!-- tags: tensorflow, python, environment | created: 2026-02-28 -->

@@ -1,8 +1,8 @@
 # Loop Summary
 
 **Status:** Completed successfully
-**Iterations:** 7
-**Duration:** 9m 26s
+**Iterations:** 2
+**Duration:** 10m 12s
 
 ## Tasks
 
@@ -14,4 +14,4 @@ _No events recorded._
 
 ## Final Commit
 
-198ec75: test: add parallel training test suite
+b2630a4: fix: replace tf.signal.frame with tf.gather to avoid Metal crash on Apple Silicon
