@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772912590-eb90
+> load_pretrained_vocoder() in vocoder.py: enable_fallback param (default True), automatic fallback chain HiFi-GAN->Vocos->Griffin-Lim, logs warnings on fallback, can be disabled for strict backend requirements
+<!-- tags: vocoder, fallback, tensorflow | created: 2026-03-07 -->
+
 ### mem-1772912206-3384
 > VocosWrapper in vocos_wrapper.py: PyTorch-based vocoder fallback, handles TF<->PyTorch conversion, supports [B,T,80] and [B,80,T] shapes, uses charactr/vocos-mel-22khz model, graceful ImportError for optional deps (torch, vocos)
 <!-- tags: vocoder, vocos, pytorch, tensorflow | created: 2026-03-07 -->

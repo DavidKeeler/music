@@ -81,15 +81,19 @@ def train_vocoder(
     # Wrap in training model
     training_model = VocoderTraining(generator, stft_loss)
     
+    # Build model with dummy input
+    dummy_mel = tf.random.normal([1, 100, 80])
+    _ = training_model(dummy_mel, training=False)
+    
     # Compile with optimizer
     training_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr))
     
     # Callbacks
-    checkpoint_path = Path(checkpoint_dir) / "checkpoint_epoch_{epoch:02d}"
+    checkpoint_path = Path(checkpoint_dir) / "checkpoint_epoch_{epoch:02d}.weights.h5"
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
             str(checkpoint_path),
-            save_weights_only=False,
+            save_weights_only=True,
             save_freq='epoch'
         ),
         tf.keras.callbacks.TensorBoard(log_dir=str(Path(checkpoint_dir) / "logs"))
@@ -106,7 +110,7 @@ def train_vocoder(
 
 def parse_args(args=None):
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Finetune pretrained HiFi-GAN vocoder")
+    parser = argparse.ArgumentParser(description="Finetune pretrained vocoder")
     
     parser.add_argument('--data_dir', type=str, required=True,
                         help='Music data directory')
@@ -118,8 +122,11 @@ def parse_args(args=None):
                         help='Batch size')
     parser.add_argument('--lr', type=float, default=1e-4,
                         help='Learning rate')
-    parser.add_argument('--model_name', type=str, default=None,
-                        help='TensorFlowTTS model name (default: tensorspeech/tts-melgan-ljspeech-en)')
+    parser.add_argument('--backend', type=str, default='hifigan',
+                        choices=['hifigan', 'vocos', 'griffin-lim', 'melgan'],
+                        help='Vocoder backend to use')
+    parser.add_argument('--pretrained_path', type=str, default=None,
+                        help='Path to pretrained checkpoint (optional, downloads if not provided)')
     
     return parser.parse_args(args)
 
@@ -131,13 +138,25 @@ def main():
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     
     # Load pretrained vocoder
-    print("Loading pretrained MelGAN...")
-    vocoder_model = vocoder.load_pretrained_vocoder(args.model_name)
-    
-    if vocoder_model.generator is None:
-        raise ValueError(
-            "No pretrained model loaded. Provide --model_name or implement custom generator loading."
+    print(f"Loading pretrained {args.backend} vocoder...")
+    if args.backend == 'hifigan':
+        vocoder_model = vocoder.HiFiGANVocoder.from_pretrained(args.pretrained_path)
+    elif args.backend == 'vocos':
+        vocoder_model = vocoder.load_vocos_vocoder()
+    else:
+        # Use fallback chain for other backends
+        vocoder_model = vocoder.load_pretrained_vocoder(
+            backend=args.backend,
+            enable_fallback=False
         )
+    
+    # Extract generator for training
+    if hasattr(vocoder_model, 'generator') and vocoder_model.generator is not None:
+        generator = vocoder_model.generator
+    elif hasattr(vocoder_model, 'model'):
+        generator = vocoder_model.model
+    else:
+        generator = vocoder_model
     
     # Create dataset
     print(f"Loading dataset from {args.data_dir}...")
@@ -149,7 +168,7 @@ def main():
     
     # Train
     train_vocoder(
-        vocoder_model.generator,
+        generator,
         train_dataset,
         args.epochs,
         args.lr,

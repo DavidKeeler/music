@@ -207,3 +207,51 @@ Will create tasks for each step and start with Step 1 (mel normalization).
 **Committed:** 18c3261
 
 **Next:** Step 6 - Update unified vocoder interface with fallback chain (now unblocked)
+
+
+## Iteration 6: Step 6 - Update unified vocoder interface with fallback chain
+
+**Task:** Update load_pretrained_vocoder() with automatic fallback chain
+
+**Implementation complete:**
+- Updated `load_pretrained_vocoder()` in `vocoder.py` with `enable_fallback` parameter
+- Implements automatic fallback chain: HiFi-GAN → Vocos → Griffin-Lim
+- Added logging for fallback events (warnings when falling back, info for Griffin-Lim)
+- Each backend tries to load, catches exceptions, and falls back to next if enabled
+- MelGAN also falls back to HiFi-GAN if TensorFlowTTS not installed
+- Created 7 tests in `tests/test_vocoder_fallback.py` - all pass
+- Updated 2 existing tests to handle new fallback behavior
+- All 59 tests pass, 8 skipped
+
+**Key decisions:**
+- Fallback enabled by default (`enable_fallback=True`) for user convenience
+- Can be disabled for strict backend requirements
+- Fallback chain prioritizes quality: HiFi-GAN (best) → Vocos (excellent) → Griffin-Lim (debug)
+- Logging provides visibility into fallback events
+- Tests verify both fallback and non-fallback modes
+
+**Committed:** afb79f2
+
+**Next:** Step 7 - Update train_vocoder.py for fine-tuning (now unblocked)
+
+## Iteration 7: Step 7 - Update train_vocoder.py for fine-tuning
+
+**Task:** Update train_vocoder.py to support HiFi-GAN fine-tuning
+
+**Current state:**
+- train_vocoder.py uses old MelGAN interface with `vocoder.load_pretrained_vocoder()`
+- VocoderTraining wrapper exists with STFT loss
+- No discriminator support yet
+
+**Approach:**
+1. Update to use new `HiFiGANVocoder.from_pretrained()` interface
+2. Support both HiFi-GAN and fallback backends
+3. Keep generator-only training (STFT loss) - discriminators can be added later
+4. Update CLI args to support backend selection
+5. Add smoke test to verify training works
+
+**Key decisions:**
+- Start with generator-only training (simpler, no discriminators needed)
+- Full GAN training with discriminators can be added in future iteration
+- Use new fallback chain to support multiple backends
+- Maintain backward compatibility with existing VocoderTraining wrapper
