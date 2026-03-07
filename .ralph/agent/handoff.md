@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-06 16:36:14 UTC_
+_Generated: 2026-03-07 18:25:23 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** 47afaf0: chore: auto-commit before merge (loop primary)
+- **HEAD:** c43a971: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -51,6 +51,7 @@ _Generated: 2026-03-06 16:36:14 UTC_
 - [x] Fix dataset prefetching to use fixed value
 - [x] Update memory profiling script
 - [x] Create test suite for parallel training
+- [x] Fix TensorFlow crash in LocalWindowAttention matmul on Apple Silicon
 
 
 ## Key Files
@@ -65,8 +66,8 @@ Recently modified:
 - `.ralph/current-events`
 - `.ralph/current-loop-id`
 - `.ralph/events-20260306-162648.jsonl`
+- `.ralph/events-20260307-181510.jsonl`
 - `.ralph/history.jsonl`
-- `.ralph/loop.lock`
 
 ## Next Session
 
@@ -75,14 +76,17 @@ Session completed successfully. No pending work.
 **Original objective:**
 
 ```
-# Objective
-Fix critical training loop bug causing ~100x memory overhead by replacing autoregressive loop with proper parallel Transformer training.
+# PROMPT for Ralph: TensorFlow Music Generation System
 
-# Context
-Current training runs SEQ_LEN forward passes inside a single GradientTape, causing memory to scale as O(SEQ_LEN × model_memory). This is incorrect for Transformers - they should use parallel training with causal masking.
+## Objective
 
-**Current (broken):**
-```python
-for t in range(1, seq_len):  # 512 iterations!
-    pred = self.base_model(ar_input, t...
+Port the PyTorch music generation system from `/Users/davidkeeler/code/conducting2` to TensorFlow/Keras in `/Users/davidkeeler/code/conducting3`, following the patterns established in `/Users/davidkeeler/code/conducting`.
+
+## Context
+
+**Source codebase (PyTorch):** `/Users/davidkeeler/code/conducting2/src/music_generation/`
+
+Key files to port:
+- `model.py` - MelGenerator (Transformer-based)
+- `model_components.py` - Attention,...
 ```

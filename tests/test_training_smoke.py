@@ -31,19 +31,38 @@ def test_vocoder_training_smoke():
     """Smoke test: VocoderTraining can run one training step."""
     # Minimal mock vocoder
     class MockVocoder(tf.keras.Model):
+        def __init__(self):
+            super().__init__()
+            # Add a dummy layer with trainable weights
+            self.dense = tf.keras.layers.Dense(256, use_bias=False)
+        
         def call(self, mel):
             batch_size = tf.shape(mel)[0]
             time_steps = tf.shape(mel)[1]
-            return tf.random.normal([batch_size, time_steps * 256])
+            # Use the dense layer so gradients flow through
+            features = self.dense(mel)  # [batch, time, 256]
+            # Reshape to audio samples
+            audio = tf.reshape(features, [batch_size, time_steps * 256])
+            return audio
+    
+    # Minimal mock STFT loss
+    class MockSTFTLoss(tf.keras.layers.Layer):
+        def call(self, pred_audio, target_audio):
+            return tf.reduce_mean(tf.abs(pred_audio - target_audio))
     
     vocoder = MockVocoder()
-    training_model = VocoderTraining(vocoder)
+    stft_loss = MockSTFTLoss()
+    training_model = VocoderTraining(vocoder, stft_loss)
+    training_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4))
     
     # Synthetic batch: (mel, audio)
     batch_size, mel_time, mel_dim = 2, 50, 80
     audio_samples = mel_time * 256
     mel = tf.random.normal([batch_size, mel_time, mel_dim])
     audio = tf.random.normal([batch_size, audio_samples])
+    
+    # Build the model by calling it once
+    _ = training_model(mel)
     
     # Run one training step
     result = training_model.train_step((mel, audio))
