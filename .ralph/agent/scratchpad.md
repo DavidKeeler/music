@@ -93,3 +93,40 @@ Will create tasks for each step and start with Step 1 (mel normalization).
 **Committed:** 471d3fe
 
 **Next:** Step 2 - Implement Griffin-Lim vocoder (now unblocked)
+
+## Iteration 2 Complete
+
+**Task:** Step 2 - Implement Griffin-Lim vocoder
+
+**Implementation:**
+- Added `GriffinLimVocoder` class to `vocoder.py`
+- Uses librosa.griffinlim() for phase reconstruction
+- Handles both [B,T,80] and [B,80,T] input shapes
+- Converts log-mel to linear mel before Griffin-Lim
+- Updated `load_pretrained_vocoder()` to support backend selection ("melgan" or "griffin-lim")
+
+**Tests:**
+- Created `tests/test_griffin_lim.py` with 7 tests
+- All tests pass (41/41 total including existing tests)
+- Coverage includes: initialization, shape handling, non-silence, value range, backend loading
+
+**Committed:** cc951e7
+
+**Next:** Step 3 - Extract HiFi-GAN from TensorFlowTTS repo (now unblocked)
+
+## Iteration 3: Step 3 - Extract HiFi-GAN from TensorFlowTTS
+
+**Task:** Extract HiFi-GAN implementation from TensorFlowTTS repo
+
+**Approach:**
+1. Clone TensorFlowTTS repo to /tmp
+2. Identify and copy relevant files to `src/music_generation/vocoder/hifigan/`
+3. Remove internal dependencies and adapt imports
+4. Create minimal test to verify imports work
+
+**Files to extract:**
+- `tensorflow_tts/models/hifigan.py` → `generator.py`
+- `tensorflow_tts/models/hifigan_discriminator.py` → `discriminator.py`
+- Config structures (adapt to our format)
+
+**Goal:** Have standalone HiFi-GAN code that can be imported without TensorFlowTTS package

@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772911227-0dcc
+> GriffinLimVocoder in vocoder.py: uses librosa.griffinlim() for mel-to-audio conversion. Handles [B,T,80] and [B,80,T] shapes. Converts log-mel to linear mel (np.exp) before inverse mel filterbank. Debug/testing only - quality too low for production.
+<!-- tags: vocoder, griffin-lim, audio | created: 2026-03-07 -->
+
 ### mem-1772910871-012f
 > MelNormalizer class in audio_utils.py: normalize/denormalize methods, from_dataset() computes mean/std from cached .npy files using streaming approach (O(1) memory). Used before vocoder inference.
 <!-- tags: vocoder, normalization, audio | created: 2026-03-07 -->
