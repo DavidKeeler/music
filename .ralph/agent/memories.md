@@ -180,6 +180,10 @@
 
 ## Context
 
+### mem-1772915792-b1cc
+> Vocoder replacement complete: All 10 steps implemented and tested. Griffin-Lim (debug), HiFi-GAN (primary), Vocos (fallback) all working. MelNormalizer integrated. train_vocoder.py ready for GPU fine-tuning. All 5 acceptance criteria met. 25 tests passing. Ready for deployment.
+<!-- tags: vocoder, tensorflow, complete | created: 2026-03-07 -->
+
 ### mem-1772303344-1aed
 > requirements.txt uses tensorflow>=2.13.0, tensorflow-hub>=0.14.0 for pretrained vocoder, soundfile/librosa for audio I/O. README.md documents training workflow, inference API, and architecture.
 <!-- tags: documentation, dependencies | created: 2026-02-28 -->

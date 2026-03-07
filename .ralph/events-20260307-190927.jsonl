@@ -3,3 +3,5 @@
 {"payload":"Step 4 complete: HiFi-GAN wrapper with pretrained loading, 7 tests (5 pass, 2 skip), all 49 tests pass","topic":"task.done","ts":"2026-03-07T19:32:28.092742+00:00"}
 {"payload":"Step 5 complete: Vocos wrapper implemented, 8 tests (2 pass, 6 skip), all 52 tests pass","topic":"task.done","ts":"2026-03-07T19:36:56.235470+00:00"}
 {"payload":"Step 6 complete: Vocoder fallback chain implemented, 7 new tests pass, all 59 tests pass","topic":"task.done","ts":"2026-03-07T19:43:13.852551+00:00"}
+{"payload":"Step 7 complete: train_vocoder.py updated for fine-tuning, 5 new tests pass, all 64 tests pass","topic":"task.done","ts":"2026-03-07T19:48:47.143454+00:00"}
+{"payload":"Step 8 complete: Added 20 comprehensive vocoder tests covering AC1, AC2, AC3. All 81 tests pass.","topic":"task.done","ts":"2026-03-07T19:58:31.571222+00:00"}
