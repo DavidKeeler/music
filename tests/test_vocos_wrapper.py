@@ -131,12 +131,17 @@ def test_load_vocos_vocoder():
 
 def test_vocoder_backend_vocos():
     """Test loading Vocos via load_pretrained_vocoder."""
-    from src.music_generation.vocoder import load_pretrained_vocoder
+    from src.music_generation.vocoder import load_pretrained_vocoder, GriffinLimVocoder
     
     if not _has_vocos_deps():
-        # Should raise ImportError
+        # Should fall back to Griffin-Lim (or raise if fallback disabled)
+        vocoder = load_pretrained_vocoder(backend="vocos", enable_fallback=True)
+        # With fallback enabled, should get Griffin-Lim
+        assert isinstance(vocoder, GriffinLimVocoder)
+        
+        # Without fallback, should raise
         with pytest.raises(ImportError):
-            load_pretrained_vocoder(backend="vocos")
+            load_pretrained_vocoder(backend="vocos", enable_fallback=False)
     else:
         # Should load successfully
         vocoder = load_pretrained_vocoder(backend="vocos")

@@ -76,7 +76,7 @@ def test_load_pretrained_hifigan_backend():
     # This test will fail if huggingface_hub is not installed or download fails
     # We'll just test that the function exists and returns correct type
     try:
-        vocoder = load_pretrained_vocoder(backend="hifigan")
+        vocoder = load_pretrained_vocoder(backend="hifigan", enable_fallback=False)
         assert isinstance(vocoder, HiFiGANVocoder)
         assert vocoder.generator is not None
     except (ImportError, RuntimeError) as e:

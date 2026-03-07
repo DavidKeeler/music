@@ -182,3 +182,28 @@ Will create tasks for each step and start with Step 1 (mel normalization).
 **Committed:** 320c5e8
 
 **Next:** Step 5 - Implement Vocos wrapper (optional fallback) - now unblocked
+
+## Iteration 5: Step 5 - Implement Vocos wrapper (optional fallback)
+
+**Task:** Implement Vocos wrapper for PyTorch-based vocoder fallback
+
+**Implementation complete:**
+- Created `VocosWrapper` class in `src/music_generation/vocos_wrapper.py`
+- Handles TensorFlow ↔ PyTorch tensor conversion (numpy as bridge)
+- Supports both [B,T,80] and [B,80,T] input shapes (transposes to [B,80,T] for Vocos)
+- Uses `charactr/vocos-mel-22khz` pretrained model from Hugging Face
+- Graceful ImportError handling for optional dependencies (torch, vocos)
+- Added `load_vocos_vocoder()` helper function
+- Updated `load_pretrained_vocoder()` to support "vocos" backend
+- Created 8 tests in `tests/test_vocos_wrapper.py` - 2 pass, 6 skip (torch/vocos not installed)
+- All 52 tests pass
+
+**Key decisions:**
+- Vocos is optional - gracefully handles missing dependencies
+- Uses numpy as bridge for TF→PyTorch→TF conversion
+- Transposes [B,T,80] to [B,80,T] since Vocos expects mel channels in middle dimension
+- Provides state-of-the-art quality as fallback when HiFi-GAN fails
+
+**Committed:** 18c3261
+
+**Next:** Step 6 - Update unified vocoder interface with fallback chain (now unblocked)

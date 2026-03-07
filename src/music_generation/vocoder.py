@@ -152,44 +152,73 @@ class HiFiGANVocoder(tf.keras.Model):
         return cls(generator=generator)
 
 
-def load_pretrained_vocoder(backend: str = "hifigan", model_name: Optional[str] = None):
-    """Load pretrained vocoder.
+def load_pretrained_vocoder(
+    backend: str = "hifigan",
+    model_name: Optional[str] = None,
+    enable_fallback: bool = True
+):
+    """Load pretrained vocoder with automatic fallback.
     
     Args:
-        backend: Vocoder backend ("hifigan", "melgan", "vocos", or "griffin-lim")
+        backend: Vocoder backend ("hifigan", "vocos", "melgan", or "griffin-lim")
         model_name: Model name for TFAutoModel (melgan) or Vocos. If None, uses defaults.
+        enable_fallback: If True, automatically fall back to next available backend on failure
         
     Returns:
         Vocoder instance (HiFiGANVocoder, VocosWrapper, or GriffinLimVocoder)
         
     Note:
-        - HiFi-GAN: Downloads from tensorspeech/tts-hifigan-ljspeech-en
-        - MelGAN: Uses tensorspeech/tts-melgan-ljspeech-en
-        - Vocos: Uses charactr/vocos-mel-22khz (requires torch)
-        - Griffin-Lim: No pretrained weights needed
+        Fallback chain (if enable_fallback=True):
+        1. HiFi-GAN (best quality, requires huggingface_hub)
+        2. Vocos (excellent quality, requires torch)
+        3. Griffin-Lim (debug only, always available)
     """
-    if backend == "griffin-lim":
-        return GriffinLimVocoder()
+    import logging
+    logger = logging.getLogger(__name__)
     
+    # Try requested backend
     if backend == "hifigan":
-        return HiFiGANVocoder.from_pretrained()
+        try:
+            return HiFiGANVocoder.from_pretrained()
+        except Exception as e:
+            if not enable_fallback:
+                raise
+            logger.warning(f"HiFi-GAN failed ({e}), falling back to Vocos")
+            backend = "vocos"
     
     if backend == "vocos":
-        from .vocos_wrapper import load_vocos_vocoder
-        if model_name is None:
-            model_name = "charactr/vocos-mel-22khz"
-        return load_vocos_vocoder(model_name=model_name)
+        try:
+            from .vocos_wrapper import load_vocos_vocoder
+            if model_name is None:
+                model_name = "charactr/vocos-mel-22khz"
+            return load_vocos_vocoder(model_name=model_name)
+        except (ImportError, Exception) as e:
+            if not enable_fallback:
+                raise
+            logger.warning(f"Vocos failed ({e}), falling back to Griffin-Lim")
+            backend = "griffin-lim"
+    
+    if backend == "griffin-lim":
+        logger.info("Using Griffin-Lim vocoder (debug quality)")
+        return GriffinLimVocoder()
     
     if backend == "melgan":
         if TFAutoModel is None:
+            if enable_fallback:
+                logger.warning("TensorFlowTTS not installed, falling back to HiFi-GAN")
+                return load_pretrained_vocoder("hifigan", enable_fallback=enable_fallback)
             raise ImportError("TensorFlowTTS not installed. Run: pip install TensorFlowTTS")
         
-        if model_name is None:
-            model_name = "tensorspeech/tts-melgan-ljspeech-en"
-        
-        # Load from TensorFlowTTS
-        pretrained_model = TFAutoModel.from_pretrained(model_name)
-        return HiFiGANVocoder(generator=pretrained_model)
+        try:
+            if model_name is None:
+                model_name = "tensorspeech/tts-melgan-ljspeech-en"
+            pretrained_model = TFAutoModel.from_pretrained(model_name)
+            return HiFiGANVocoder(generator=pretrained_model)
+        except Exception as e:
+            if not enable_fallback:
+                raise
+            logger.warning(f"MelGAN failed ({e}), falling back to HiFi-GAN")
+            return load_pretrained_vocoder("hifigan", enable_fallback=enable_fallback)
     
     raise ValueError(f"Unknown backend: {backend}. Choose 'hifigan', 'vocos', 'melgan', or 'griffin-lim'")
 

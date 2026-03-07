@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772912206-3384
+> VocosWrapper in vocos_wrapper.py: PyTorch-based vocoder fallback, handles TF<->PyTorch conversion, supports [B,T,80] and [B,80,T] shapes, uses charactr/vocos-mel-22khz model, graceful ImportError for optional deps (torch, vocos)
+<!-- tags: vocoder, vocos, pytorch, tensorflow | created: 2026-03-07 -->
+
 ### mem-1772911944-3bc3
 > HiFiGANVocoder wrapper in vocoder.py: uses TFHifiGANGenerator from hifigan/, from_pretrained() downloads from Hugging Face Hub (tensorspeech/tts-hifigan-ljspeech-en), handles both HiFi-GAN and TF Hub generators via hasattr check, input [B,T,80] output [B,samples]
 <!-- tags: vocoder, hifigan, tensorflow | created: 2026-03-07 -->
