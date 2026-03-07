@@ -51,7 +51,7 @@ def test_music_generation_model_initialization():
 
 def test_music_generation_model_call():
     """Test MusicGenerationModel.call() forward pass."""
-    mel_generator = MelGenerator(d_model=64, num_heads=2, num_layers=2, d_ff=128)
+    mel_generator = MelGenerator()
     
     class SimpleVocoder(tf.keras.Model):
         def call(self, mel, training=False):
