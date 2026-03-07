@@ -148,3 +148,81 @@ def audio_to_mel_ljspeech(waveform: tf.Tensor) -> tf.Tensor:
     log_mel = tf.math.log(mel + 1e-8)
     
     return log_mel
+
+
+class MelNormalizer:
+    """Normalize mel spectrograms using dataset statistics.
+    
+    This class provides normalization and denormalization of mel spectrograms
+    using precomputed mean and standard deviation from the training dataset.
+    """
+    
+    def __init__(self, mean: float, std: float):
+        """Initialize normalizer with statistics.
+        
+        Args:
+            mean: Mean value for normalization
+            std: Standard deviation for normalization
+        """
+        self.mean = mean
+        self.std = std
+    
+    def normalize(self, mel: tf.Tensor) -> tf.Tensor:
+        """Normalize mel spectrogram.
+        
+        Args:
+            mel: Mel spectrogram tensor
+            
+        Returns:
+            Normalized mel spectrogram
+        """
+        return normalize_mel(mel, self.mean, self.std)
+    
+    def denormalize(self, mel: tf.Tensor) -> tf.Tensor:
+        """Denormalize mel spectrogram.
+        
+        Args:
+            mel: Normalized mel spectrogram tensor
+            
+        Returns:
+            Denormalized mel spectrogram
+        """
+        return denormalize_mel(mel, self.mean, self.std)
+    
+    @classmethod
+    def from_dataset(cls, cache_dir: str) -> 'MelNormalizer':
+        """Compute statistics from cached mel spectrograms.
+        
+        Args:
+            cache_dir: Directory containing cached .npy mel files
+            
+        Returns:
+            MelNormalizer instance with computed statistics
+            
+        Raises:
+            ValueError: If no cached mel files found
+        """
+        from pathlib import Path
+        
+        cache_path = Path(cache_dir)
+        mel_files = list(cache_path.glob("*.npy"))
+        
+        if not mel_files:
+            raise ValueError(f"No cached mel files found in {cache_dir}")
+        
+        # Compute statistics using streaming approach
+        total_sum = 0.0
+        total_sum_sq = 0.0
+        total_count = 0
+        
+        for mel_file in mel_files:
+            mel = np.load(mel_file)
+            total_sum += np.sum(mel)
+            total_sum_sq += np.sum(mel ** 2)
+            total_count += mel.size
+        
+        mean = total_sum / total_count
+        variance = (total_sum_sq / total_count) - (mean ** 2)
+        std = np.sqrt(variance)
+        
+        return cls(mean=float(mean), std=float(std))
