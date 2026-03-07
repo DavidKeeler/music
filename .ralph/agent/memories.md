@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772911612-98f7
+> HiFi-GAN extracted to src/music_generation/hifigan/: generator.py (TFHifiGANGenerator), layers.py (TFReflectionPad1d, TFConvTranspose1d, WeightNormalization), config.py (HiFiGANConfig). Weight normalization disabled by default (graph mode issues). Standalone - no TensorFlowTTS dependency.
+<!-- tags: vocoder, hifigan, tensorflow | created: 2026-03-07 -->
+
 ### mem-1772911227-0dcc
 > GriffinLimVocoder in vocoder.py: uses librosa.griffinlim() for mel-to-audio conversion. Handles [B,T,80] and [B,80,T] shapes. Converts log-mel to linear mel (np.exp) before inverse mel filterbank. Debug/testing only - quality too low for production.
 <!-- tags: vocoder, griffin-lim, audio | created: 2026-03-07 -->

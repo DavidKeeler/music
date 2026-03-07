@@ -74,20 +74,20 @@ class GriffinLimVocoder:
 class HiFiGANVocoder(tf.keras.Model):
     """Wrapper for HiFi-GAN vocoder model."""
     
-    def __init__(self, pretrained_model=None):
+    def __init__(self, generator=None):
         """Initialize vocoder.
         
         Args:
-            pretrained_model: Pretrained TF Hub model or custom generator
+            generator: HiFi-GAN generator model (TFHifiGANGenerator or TF Hub model)
         """
         super().__init__()
-        self.generator = pretrained_model
+        self.generator = generator
     
     def call(self, mel_spectrogram, training=False):
         """Convert mel spectrogram to audio.
         
         Args:
-            mel_spectrogram: Mel spectrogram [batch, mel_bins, time] or [batch, time, mel_bins]
+            mel_spectrogram: Mel spectrogram [batch, time, mel_bins]
             training: Whether in training mode
             
         Returns:
@@ -96,35 +96,82 @@ class HiFiGANVocoder(tf.keras.Model):
         if self.generator is None:
             raise ValueError("No generator model loaded")
         
-        # Ensure shape is [batch, time, mel_bins] for TensorFlow convention
-        if len(tf.shape(mel_spectrogram)) == 3:
-            if mel_spectrogram.shape[1] == 80:  # [batch, 80, time]
-                mel_spectrogram = tf.transpose(mel_spectrogram, [0, 2, 1])
-        
-        # MelGAN uses inference() method and outputs [batch, samples, 1]
-        audio = self.generator.inference(mel_spectrogram)
-        
-        # Squeeze to [batch, samples]
-        audio = tf.squeeze(audio, axis=-1)
+        # Handle different generator types
+        if hasattr(self.generator, 'inference'):
+            # TF Hub MelGAN: expects [batch, time, mel_bins], outputs [batch, samples, 1]
+            audio = self.generator.inference(mel_spectrogram)
+            audio = tf.squeeze(audio, axis=-1)
+        else:
+            # HiFi-GAN: expects [batch, time, mel_bins], outputs [batch, samples, 1]
+            audio = self.generator(mel_spectrogram, training=training)
+            audio = tf.squeeze(audio, axis=-1)
         
         return audio
+    
+    @classmethod
+    def from_pretrained(cls, checkpoint_path: Optional[str] = None):
+        """Load HiFi-GAN from pretrained weights.
+        
+        Args:
+            checkpoint_path: Path to checkpoint file. If None, downloads from Hugging Face.
+            
+        Returns:
+            HiFiGANVocoder instance with loaded weights
+        """
+        from .hifigan.generator import TFHifiGANGenerator
+        from .hifigan.config import get_default_config
+        
+        # Create generator with default config
+        config = get_default_config()
+        generator = TFHifiGANGenerator(config)
+        
+        # Build generator with dummy input [batch, time, mel_bins]
+        dummy_mel = tf.random.normal([1, 100, 80])
+        _ = generator(dummy_mel, training=False)
+        
+        # Load weights if checkpoint provided
+        if checkpoint_path is not None:
+            generator.load_weights(checkpoint_path)
+        else:
+            # Download from Hugging Face
+            try:
+                from huggingface_hub import hf_hub_download
+                checkpoint_path = hf_hub_download(
+                    repo_id="tensorspeech/tts-hifigan-ljspeech-en",
+                    filename="generator.h5"
+                )
+                generator.load_weights(checkpoint_path)
+            except ImportError:
+                raise ImportError(
+                    "huggingface_hub not installed. "
+                    "Run: pip install huggingface_hub"
+                )
+            except Exception as e:
+                raise RuntimeError(f"Failed to download pretrained weights: {e}")
+        
+        return cls(generator=generator)
 
 
-def load_pretrained_vocoder(backend: str = "melgan", model_name: Optional[str] = None):
+def load_pretrained_vocoder(backend: str = "hifigan", model_name: Optional[str] = None):
     """Load pretrained vocoder.
     
     Args:
-        backend: Vocoder backend ("melgan" or "griffin-lim")
-        model_name: Model name for TFAutoModel. If None, uses default MelGAN.
+        backend: Vocoder backend ("hifigan", "melgan", or "griffin-lim")
+        model_name: Model name for TFAutoModel (melgan only). If None, uses defaults.
         
     Returns:
         Vocoder instance (HiFiGANVocoder or GriffinLimVocoder)
         
     Note:
-        Default MelGAN model: "tensorspeech/tts-melgan-ljspeech-en"
+        - HiFi-GAN: Downloads from tensorspeech/tts-hifigan-ljspeech-en
+        - MelGAN: Uses tensorspeech/tts-melgan-ljspeech-en
+        - Griffin-Lim: No pretrained weights needed
     """
     if backend == "griffin-lim":
         return GriffinLimVocoder()
+    
+    if backend == "hifigan":
+        return HiFiGANVocoder.from_pretrained()
     
     if backend == "melgan":
         if TFAutoModel is None:
@@ -135,9 +182,9 @@ def load_pretrained_vocoder(backend: str = "melgan", model_name: Optional[str] =
         
         # Load from TensorFlowTTS
         pretrained_model = TFAutoModel.from_pretrained(model_name)
-        return HiFiGANVocoder(pretrained_model=pretrained_model)
+        return HiFiGANVocoder(generator=pretrained_model)
     
-    raise ValueError(f"Unknown backend: {backend}. Choose 'melgan' or 'griffin-lim'")
+    raise ValueError(f"Unknown backend: {backend}. Choose 'hifigan', 'melgan', or 'griffin-lim'")
 
 
 

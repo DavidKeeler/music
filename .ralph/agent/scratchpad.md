@@ -130,3 +130,42 @@ Will create tasks for each step and start with Step 1 (mel normalization).
 - Config structures (adapt to our format)
 
 **Goal:** Have standalone HiFi-GAN code that can be imported without TensorFlowTTS package
+
+**Implementation complete:**
+- Cloned TensorFlowTTS repo to /tmp
+- Created `src/music_generation/hifigan/` package
+- Extracted and adapted:
+  - `generator.py`: TFHifiGANGenerator with residual blocks
+  - `layers.py`: TFReflectionPad1d, TFConvTranspose1d, WeightNormalization, GroupConv1D
+  - `config.py`: HiFiGANConfig with default settings for 22kHz audio
+- Removed internal TensorFlowTTS dependencies (BaseModel, utils imports)
+- Disabled weight normalization (causes graph mode issues in TF 2.13+)
+- Created 4 tests in `tests/test_hifigan_extraction.py` - all passing
+- All 45 tests pass
+
+**Key decisions:**
+- Placed in `src/music_generation/hifigan/` (not `vocoder/hifigan/`) to avoid conflict with `vocoder.py` file
+- Disabled weight normalization by default - the boolean check `if not self.initialized` doesn't work in TF graph mode
+- Simplified GroupConv1D to use native TF Conv1D with groups parameter (TF 2.13+ supports this)
+- Fixed `compute_output_shape` to handle both tuple and TensorShape returns
+
+**Committed:** 00d00b9
+
+**Next:** Step 4 - Create HiFi-GAN wrapper with pretrained loading (now unblocked)
+
+## Iteration 4: Step 4 - Create HiFi-GAN wrapper with pretrained loading
+
+**Task:** Create wrapper class for HiFi-GAN with pretrained weight loading
+
+**Approach:**
+1. Update `HiFiGANVocoder` class in `vocoder.py` to use extracted generator
+2. Add `from_pretrained()` classmethod to load pretrained weights
+3. Update `load_pretrained_vocoder()` to support "hifigan" backend
+4. Create tests for wrapper functionality
+
+**Key decisions:**
+- Use Hugging Face Hub for pretrained weights (tensorspeech/tts-hifigan-ljspeech-en)
+- Maintain consistent interface: input [B,T,80], output [B,samples]
+- Handle shape conversion internally (generator expects [B,80,T])
+
+**Implementation starting...**
