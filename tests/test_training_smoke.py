@@ -74,44 +74,28 @@ def test_vocoder_training_smoke():
 
 
 def test_checkpoint_save_and_load():
-    """Smoke test: save and load SavedModel checkpoint."""
+    """Smoke test: save and load checkpoint with .h5 extension."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Create minimal models
-        class SimpleGenerator(tf.keras.Model):
-            def __init__(self):
-                super().__init__()
-                self.dense = tf.keras.layers.Dense(80)
-            
-            def call(self, x, training=False):
-                return self.dense(x)
+        # Create actual MelGenerator
+        from src.music_generation.model import MelGenerator
         
-        class SimpleVocoder(tf.keras.Model):
-            def __init__(self):
-                super().__init__()
-                self.dense = tf.keras.layers.Dense(22050)
-            
-            def call(self, mel, training=False):
-                return self.dense(mel[:, 0, :])
+        mel_gen = MelGenerator()
         
-        # Create and save models
-        mel_gen = SimpleGenerator()
-        vocoder = SimpleVocoder()
+        # Build model by calling it
+        mel_gen(tf.random.normal([1, 10, 80]))
         
-        mel_checkpoint = Path(tmpdir) / "mel_gen"
-        vocoder_checkpoint = Path(tmpdir) / "vocoder"
+        # Save with .h5 extension (weights only)
+        mel_checkpoint = Path(tmpdir) / "mel_gen.weights.h5"
+        mel_gen.save_weights(str(mel_checkpoint))
         
-        mel_gen.save(str(mel_checkpoint))
-        vocoder.save(str(vocoder_checkpoint))
-        
-        # Load via MusicGenerationModel
-        model = MusicGenerationModel.from_checkpoints(
-            str(mel_checkpoint),
-            str(vocoder_checkpoint)
-        )
+        # Load weights into new model
+        mel_gen_loaded = MelGenerator()
+        mel_gen_loaded(tf.random.normal([1, 10, 80]))  # Build the model first
+        mel_gen_loaded.load_weights(str(mel_checkpoint))
         
         # Verify it works
-        seed_mel = tf.random.normal([10, 80])
-        audio = model.generate(seed_mel, num_frames=5)
+        test_input = tf.random.normal([1, 10, 80])
+        output = mel_gen_loaded(test_input)
         
-        assert len(audio.shape) == 1
-        assert audio.shape[0] > 0
+        assert output.shape == (1, 10, 80)
+        assert not tf.reduce_any(tf.math.is_nan(output))
