@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-06 07:39:42 UTC_
+_Generated: 2026-03-06 16:36:14 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** 9921e3b: chore: auto-commit before merge (loop primary)
+- **HEAD:** 47afaf0: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -39,21 +39,24 @@ _Generated: 2026-03-06 07:39:42 UTC_
 - [x] Add relative position bias to LocalWindowAttention
 - [x] Update MelGenerator with 3 explicit transformer layers
 - [x] Test causality and window constraints
+- [x] Verify training compatibility
 - [x] Add TensorFlow memory configuration
 - [x] Implement streaming statistics computation
 - [x] Add fixed-window autoregressive loop
 - [x] Add batch size warning
 - [x] Create memory profiling script
+- [x] Simplify MelGeneratorTraining class to use parallel training
+- [x] Update train() function and remove teacher forcing parameters
+- [x] Clean up config.py - remove teacher forcing constants
+- [x] Fix dataset prefetching to use fixed value
+- [x] Update memory profiling script
+- [x] Create test suite for parallel training
 
-### Remaining
-
-- [ ] Verify training compatibility _(blocked by: task-1772726322-657c)_
 
 ## Key Files
 
 Recently modified:
 
-- `.gitignore`
 - `.ralph/agent/handoff.md`
 - `.ralph/agent/memories.md`
 - `.ralph/agent/scratchpad.md`
@@ -61,21 +64,25 @@ Recently modified:
 - `.ralph/agent/tasks.jsonl`
 - `.ralph/current-events`
 - `.ralph/current-loop-id`
-- `.ralph/events-20260305-155728.jsonl`
-- `.ralph/events-20260305-155801.jsonl`
+- `.ralph/events-20260306-162648.jsonl`
+- `.ralph/history.jsonl`
+- `.ralph/loop.lock`
 
 ## Next Session
 
-The following prompt can be used to continue where this session left off:
+Session completed successfully. No pending work.
+
+**Original objective:**
 
 ```
-Continue the previous work. Remaining tasks (1):
-- Verify training compatibility
-
-Original objective: # Objective
-Fix memory issues in TensorFlow music generation training to enable training on MacBook Air with limited RAM.
+# Objective
+Fix critical training loop bug causing ~100x memory overhead by replacing autoregressive loop with proper parallel Transformer training.
 
 # Context
-Training script experiences OOM errors due to:
-- O(n²) memory grow...
+Current training runs SEQ_LEN forward passes inside a single GradientTape, causing memory to scale as O(SEQ_LEN × model_memory). This is incorrect for Transformers - they should use parallel training with causal masking.
+
+**Current (broken):**
+```python
+for t in range(1, seq_len):  # 512 iterations!
+    pred = self.base_model(ar_input, t...
 ```

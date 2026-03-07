@@ -57,16 +57,8 @@ class MusicNetDataset:
             with open(self.stats_path, 'w') as f:
                 json.dump({'mean': float(self.mel_mean), 'std': float(self.mel_std)}, f)
         
-        # Build sequence indices without loading mels (lazy loading)
-        self.sequence_indices = []  # (file_idx, start_frame)
-        
-        for file_idx, audio_file in enumerate(self.audio_files):
-            mel_length = self._get_mel_length(audio_file)
-            if mel_length > SEQ_LEN:  # Skip files too short
-                # Generate sequence indices with stride = SEQ_LEN // 2
-                stride = SEQ_LEN // 2
-                for start in range(0, mel_length - SEQ_LEN, stride):
-                    self.sequence_indices.append((file_idx, start))
+        # Build file indices - skip length checking, handle during iteration
+        self.file_indices = list(range(len(self.audio_files)))
     
     def _compute_statistics(self):
         """Compute global mean and std from all audio files using streaming computation."""
@@ -130,21 +122,29 @@ class MusicNetDataset:
     
     def _generator(self):
         """Generator function for tf.data.Dataset."""
-        for file_idx, start_frame in self.sequence_indices:
+        for file_idx in self.file_indices:
             audio_file = self.audio_files[file_idx]
             
             # Load mel on-demand
             mel = self._load_or_compute_mel(audio_file)
+            mel_length = mel.shape[0]
             
-            # Extract input and target sequences
-            input_mel = mel[start_frame:start_frame + SEQ_LEN]
-            target_mel = mel[start_frame + 1:start_frame + SEQ_LEN + 1]
+            # Skip if too short
+            if mel_length <= SEQ_LEN:
+                continue
             
-            yield input_mel.numpy(), target_mel.numpy()
+            # Generate sequences with stride
+            stride = SEQ_LEN // 2
+            for start_frame in range(0, mel_length - SEQ_LEN, stride):
+                # Extract input and target sequences
+                input_mel = mel[start_frame:start_frame + SEQ_LEN]
+                target_mel = mel[start_frame + 1:start_frame + SEQ_LEN + 1]
+                
+                yield input_mel.numpy(), target_mel.numpy()
     
     def __len__(self) -> int:
-        """Return number of sequences."""
-        return len(self.sequence_indices)
+        """Return approximate number of sequences."""
+        return len(self.file_indices) * 10  # Rough estimate
 
 
 def create_dataset(data_dir: str, cache_dir: str, batch_size: int, shuffle: bool = True):

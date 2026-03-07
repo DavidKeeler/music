@@ -143,3 +143,7 @@
 ### mem-1772303344-1aed
 > requirements.txt uses tensorflow>=2.13.0, tensorflow-hub>=0.14.0 for pretrained vocoder, soundfile/librosa for audio I/O. README.md documents training workflow, inference API, and architecture.
 <!-- tags: documentation, dependencies | created: 2026-02-28 -->
+
+### mem-1772983986-behavior
+> CRITICAL BEHAVIOR CORRECTION: When running ralph plan or PDD workflow, NEVER make code changes or system modifications without explicit user approval. Always present the plan/proposal first and wait for confirmation before executing any changes. Planning phase is for design and documentation only - implementation comes later.
+<!-- tags: behavior, planning, pdd, ralph | created: 2026-03-07 -->
