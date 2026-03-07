@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772910871-012f
+> MelNormalizer class in audio_utils.py: normalize/denormalize methods, from_dataset() computes mean/std from cached .npy files using streaming approach (O(1) memory). Used before vocoder inference.
+<!-- tags: vocoder, normalization, audio | created: 2026-03-07 -->
+
 ### mem-1772814961-0a07
 > test_parallel_training.py: 3 tests verify parallel training - test_train_step_shapes (correct shapes), test_single_forward_pass (single pass not loop), test_loss_decreases (convergence). Uses SimpleMelGenerator mock to avoid dependencies.
 <!-- tags: testing, parallel-training | created: 2026-03-06 -->

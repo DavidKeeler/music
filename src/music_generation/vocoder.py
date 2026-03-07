@@ -1,6 +1,8 @@
 """Vocoder model for mel-to-audio conversion."""
 
 import tensorflow as tf
+import numpy as np
+import librosa
 from pathlib import Path
 from typing import Optional
 
@@ -8,6 +10,65 @@ try:
     from TensorFlowTTS.tensorflow_tts.inference import TFAutoModel
 except ImportError:
     TFAutoModel = None
+
+
+class GriffinLimVocoder:
+    """Griffin-Lim vocoder for mel-to-audio conversion (debug/testing only)."""
+    
+    def __init__(self, n_iter: int = 32, hop_length: int = 256, n_fft: int = 1024):
+        """Initialize Griffin-Lim vocoder.
+        
+        Args:
+            n_iter: Number of Griffin-Lim iterations
+            hop_length: STFT hop length in samples
+            n_fft: FFT size
+        """
+        self.n_iter = n_iter
+        self.hop_length = hop_length
+        self.n_fft = n_fft
+    
+    def __call__(self, mel: tf.Tensor) -> tf.Tensor:
+        """Convert mel spectrogram to audio using Griffin-Lim.
+        
+        Args:
+            mel: Mel spectrogram [batch, time, mel_bins] or [batch, mel_bins, time]
+            
+        Returns:
+            Audio waveform [batch, samples]
+        """
+        # Convert to numpy
+        mel_np = mel.numpy()
+        
+        # Handle shape: ensure [batch, mel_bins, time]
+        if mel_np.ndim == 3 and mel_np.shape[2] == 80:
+            # [batch, time, 80] -> [batch, 80, time]
+            mel_np = np.transpose(mel_np, (0, 2, 1))
+        
+        # Convert mel to linear spectrogram and apply Griffin-Lim
+        audio_list = []
+        for mel_frame in mel_np:
+            # mel_frame is [mel_bins, time]
+            # Convert from log mel to linear mel
+            mel_linear = np.exp(mel_frame)
+            
+            # Convert mel to STFT magnitude
+            stft = librosa.feature.inverse.mel_to_stft(
+                mel_linear,
+                sr=22050,
+                n_fft=self.n_fft,
+                power=1.0
+            )
+            
+            # Apply Griffin-Lim
+            audio = librosa.griffinlim(
+                stft,
+                n_iter=self.n_iter,
+                hop_length=self.hop_length,
+                n_fft=self.n_fft
+            )
+            audio_list.append(audio)
+        
+        return tf.constant(np.array(audio_list), dtype=tf.float32)
 
 
 class HiFiGANVocoder(tf.keras.Model):
@@ -49,27 +110,35 @@ class HiFiGANVocoder(tf.keras.Model):
         return audio
 
 
-def load_pretrained_vocoder(model_name: Optional[str] = None) -> HiFiGANVocoder:
-    """Load pretrained vocoder from TensorFlowTTS.
+def load_pretrained_vocoder(backend: str = "melgan", model_name: Optional[str] = None):
+    """Load pretrained vocoder.
     
     Args:
+        backend: Vocoder backend ("melgan" or "griffin-lim")
         model_name: Model name for TFAutoModel. If None, uses default MelGAN.
         
     Returns:
-        HiFiGANVocoder instance
+        Vocoder instance (HiFiGANVocoder or GriffinLimVocoder)
         
     Note:
-        Default model: "tensorspeech/tts-melgan-ljspeech-en"
+        Default MelGAN model: "tensorspeech/tts-melgan-ljspeech-en"
     """
-    if TFAutoModel is None:
-        raise ImportError("TensorFlowTTS not installed. Run: pip install TensorFlowTTS")
+    if backend == "griffin-lim":
+        return GriffinLimVocoder()
     
-    if model_name is None:
-        model_name = "tensorspeech/tts-melgan-ljspeech-en"
+    if backend == "melgan":
+        if TFAutoModel is None:
+            raise ImportError("TensorFlowTTS not installed. Run: pip install TensorFlowTTS")
+        
+        if model_name is None:
+            model_name = "tensorspeech/tts-melgan-ljspeech-en"
+        
+        # Load from TensorFlowTTS
+        pretrained_model = TFAutoModel.from_pretrained(model_name)
+        return HiFiGANVocoder(pretrained_model=pretrained_model)
     
-    # Load from TensorFlowTTS
-    pretrained_model = TFAutoModel.from_pretrained(model_name)
-    return HiFiGANVocoder(pretrained_model=pretrained_model)
+    raise ValueError(f"Unknown backend: {backend}. Choose 'melgan' or 'griffin-lim'")
+
 
 
 def load_vocoder_from_checkpoint(checkpoint_path: str) -> HiFiGANVocoder:

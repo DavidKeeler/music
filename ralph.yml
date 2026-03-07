@@ -4,6 +4,6 @@ cli:
   backend: "kiro"
 
 event_loop:
-  prompt_file: "specs/tensorflow-music-generation/PROMPT.md"
+  prompt_file: "specs/vocoder-replacement/PROMPT.md"
   completion_promise: "LOOP_COMPLETE"
   max_iterations: 100
