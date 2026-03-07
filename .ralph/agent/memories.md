@@ -2,6 +2,18 @@
 
 ## Patterns
 
+### mem-1772915646-8a3e
+> inference.py integration complete: MusicGenerationModel supports MelNormalizer (optional param), normalizes in both call() and generate(), from_checkpoints() supports vocoder_backend selection (hifigan/vocos/griffin-lim) and enable_fallback for automatic backend fallback. All 5 inference tests + 17 vocoder tests pass.
+<!-- tags: inference, vocoder, tensorflow | created: 2026-03-07 -->
+
+### mem-1772913504-0c1c
+> test_vocoder_comprehensive.py: 20 tests in 5 classes - TestVocoderInference (shape, value range, non-silent, batch), TestMelFormatValidation (valid shape, normalization), TestEndToEndGeneration (pipeline, fallback), TestVocoderRobustness (edge cases), TestVocoderPerformance (speed). Uses Griffin-Lim for reliability. Covers AC1, AC2, AC3.
+<!-- tags: testing, vocoder, tensorflow | created: 2026-03-07 -->
+
+### mem-1772912931-dc04
+> train_vocoder.py updated: supports backend selection (--backend hifigan/vocos/griffin-lim/melgan), uses HiFiGANVocoder.from_pretrained() or load_vocos_vocoder(), extracts generator from wrapper, builds model before training, saves weights-only (.weights.h5). Generator-only training with STFT loss.
+<!-- tags: vocoder, training, tensorflow | created: 2026-03-07 -->
+
 ### mem-1772912590-eb90
 > load_pretrained_vocoder() in vocoder.py: enable_fallback param (default True), automatic fallback chain HiFi-GAN->Vocos->Griffin-Lim, logs warnings on fallback, can be disabled for strict backend requirements
 <!-- tags: vocoder, fallback, tensorflow | created: 2026-03-07 -->
