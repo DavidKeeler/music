@@ -11,7 +11,7 @@ from src.music_generation.inference import MusicGenerationModel
 
 def test_mel_generator_training_smoke():
     """Smoke test: MelGeneratorTraining can run one training step."""
-    mel_gen = MelGenerator(d_model=64, num_heads=2, num_layers=2, d_ff=128)
+    mel_gen = MelGenerator()
     training_model = MelGeneratorTraining(mel_gen)
     training_model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
     
