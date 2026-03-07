@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772911944-3bc3
+> HiFiGANVocoder wrapper in vocoder.py: uses TFHifiGANGenerator from hifigan/, from_pretrained() downloads from Hugging Face Hub (tensorspeech/tts-hifigan-ljspeech-en), handles both HiFi-GAN and TF Hub generators via hasattr check, input [B,T,80] output [B,samples]
+<!-- tags: vocoder, hifigan, tensorflow | created: 2026-03-07 -->
+
 ### mem-1772911612-98f7
 > HiFi-GAN extracted to src/music_generation/hifigan/: generator.py (TFHifiGANGenerator), layers.py (TFReflectionPad1d, TFConvTranspose1d, WeightNormalization), config.py (HiFiGANConfig). Weight normalization disabled by default (graph mode issues). Standalone - no TensorFlowTTS dependency.
 <!-- tags: vocoder, hifigan, tensorflow | created: 2026-03-07 -->

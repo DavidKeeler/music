@@ -166,6 +166,19 @@ Will create tasks for each step and start with Step 1 (mel normalization).
 **Key decisions:**
 - Use Hugging Face Hub for pretrained weights (tensorspeech/tts-hifigan-ljspeech-en)
 - Maintain consistent interface: input [B,T,80], output [B,samples]
-- Handle shape conversion internally (generator expects [B,80,T])
+- Generator expects [B,T,80] NOT [B,80,T] - no transpose needed
 
-**Implementation starting...**
+**Implementation complete:**
+- Updated `HiFiGANVocoder` class to handle both HiFi-GAN and TF Hub generators
+- Added `from_pretrained()` classmethod with Hugging Face Hub download
+- Updated `load_pretrained_vocoder()` to support "hifigan" backend (now default)
+- Created 7 tests in `tests/test_hifigan_wrapper.py` - 5 pass, 2 skip (huggingface_hub not installed)
+- All 49 tests pass (1 pre-existing Griffin-Lim test failure unrelated to changes)
+
+**Key fix:**
+- Initially tried to transpose input from [B,T,80] to [B,80,T] but generator expects [B,T,80]
+- Fixed by removing transpose and passing input directly
+
+**Committed:** 320c5e8
+
+**Next:** Step 5 - Implement Vocos wrapper (optional fallback) - now unblocked

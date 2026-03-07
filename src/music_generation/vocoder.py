@@ -156,15 +156,16 @@ def load_pretrained_vocoder(backend: str = "hifigan", model_name: Optional[str] 
     """Load pretrained vocoder.
     
     Args:
-        backend: Vocoder backend ("hifigan", "melgan", or "griffin-lim")
-        model_name: Model name for TFAutoModel (melgan only). If None, uses defaults.
+        backend: Vocoder backend ("hifigan", "melgan", "vocos", or "griffin-lim")
+        model_name: Model name for TFAutoModel (melgan) or Vocos. If None, uses defaults.
         
     Returns:
-        Vocoder instance (HiFiGANVocoder or GriffinLimVocoder)
+        Vocoder instance (HiFiGANVocoder, VocosWrapper, or GriffinLimVocoder)
         
     Note:
         - HiFi-GAN: Downloads from tensorspeech/tts-hifigan-ljspeech-en
         - MelGAN: Uses tensorspeech/tts-melgan-ljspeech-en
+        - Vocos: Uses charactr/vocos-mel-22khz (requires torch)
         - Griffin-Lim: No pretrained weights needed
     """
     if backend == "griffin-lim":
@@ -172,6 +173,12 @@ def load_pretrained_vocoder(backend: str = "hifigan", model_name: Optional[str] 
     
     if backend == "hifigan":
         return HiFiGANVocoder.from_pretrained()
+    
+    if backend == "vocos":
+        from .vocos_wrapper import load_vocos_vocoder
+        if model_name is None:
+            model_name = "charactr/vocos-mel-22khz"
+        return load_vocos_vocoder(model_name=model_name)
     
     if backend == "melgan":
         if TFAutoModel is None:
@@ -184,7 +191,7 @@ def load_pretrained_vocoder(backend: str = "hifigan", model_name: Optional[str] 
         pretrained_model = TFAutoModel.from_pretrained(model_name)
         return HiFiGANVocoder(generator=pretrained_model)
     
-    raise ValueError(f"Unknown backend: {backend}. Choose 'hifigan', 'melgan', or 'griffin-lim'")
+    raise ValueError(f"Unknown backend: {backend}. Choose 'hifigan', 'vocos', 'melgan', or 'griffin-lim'")
 
 
 
