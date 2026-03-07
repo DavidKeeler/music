@@ -65,13 +65,19 @@ python -m src.music_generation.train_vocoder \
 
 ```python
 from src.music_generation.inference import MusicGenerationModel
-from src.music_generation.audio_utils import load_audio, audio_to_mel
+from src.music_generation.audio_utils import load_audio, audio_to_mel, MelNormalizer
 import soundfile as sf
 
-# Load model
+# Load normalizer from dataset statistics
+normalizer = MelNormalizer.from_dataset('./cache')
+
+# Load model with vocoder backend selection
 model = MusicGenerationModel.from_checkpoints(
     mel_checkpoint='./checkpoints/mel_generator.h5',
-    vocoder_checkpoint='./vocoder_checkpoints/vocoder.h5'
+    vocoder_checkpoint='./vocoder_checkpoints/vocoder.weights.h5',  # Optional: finetuned vocoder
+    vocoder_backend='hifigan',  # or 'vocos', 'griffin-lim'
+    normalizer=normalizer,
+    enable_fallback=True  # Automatic fallback to other backends
 )
 
 # Load seed audio
