@@ -126,6 +126,20 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
     model.compile(optimizer=optimizer)
     model.summary()
     
+    # Verify model builds correctly with sample batch
+    print("Verifying model build with sample batch...")
+    for x, y in dataset.take(1):
+        try:
+            predictions = base_model(x, training=False)
+            print(f"  Sample input shape: {x.shape}")
+            print(f"  Sample output shape: {predictions.shape}")
+            tf.debugging.assert_equal(tf.shape(predictions), tf.shape(x), 
+                                     message="Output shape must match input shape")
+            print("✓ Model build verification passed")
+        except Exception as e:
+            print(f"✗ Model build verification failed: {e}")
+            raise
+    
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_path = checkpoint_dir / "mel_generator.keras"
