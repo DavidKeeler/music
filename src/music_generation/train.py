@@ -15,6 +15,37 @@ from .model import MelGenerator
 logger = logging.getLogger(__name__)
 
 
+def exponential_tf_schedule(
+    step: int,
+    initial_ratio: float = 1.0,
+    min_ratio: float = 0.05,
+    decay_k: float = 1e-5
+) -> tf.Tensor:
+    """
+    Compute teacher forcing ratio using exponential decay.
+    
+    Implements the formula: ε(step) = max(ε_min, ε_initial * exp(-k * step))
+    
+    Args:
+        step: Current training step (can be int or tf.Tensor)
+        initial_ratio: Starting ratio (default: 1.0, pure teacher forcing)
+        min_ratio: Minimum ratio floor (default: 0.05, maintains some stability)
+        decay_k: Decay rate (default: 1e-5, tune based on dataset size)
+    
+    Returns:
+        Current teacher forcing ratio as float32 tensor (range: [min_ratio, initial_ratio])
+    
+    Example:
+        >>> ratio = exponential_tf_schedule(step=0, initial_ratio=1.0, min_ratio=0.05, decay_k=1e-5)
+        >>> # At step 0: ratio ≈ 1.0
+        >>> ratio = exponential_tf_schedule(step=50000, initial_ratio=1.0, min_ratio=0.05, decay_k=1e-5)
+        >>> # At step 50000: ratio ≈ 0.6
+    """
+    step_float = tf.cast(step, tf.float32)
+    ratio = initial_ratio * tf.exp(-decay_k * step_float)
+    return tf.maximum(min_ratio, ratio)
+
+
 def configure_memory():
     """Configure TensorFlow memory settings for resource-constrained environments."""
     # Force CPU-only on macOS to avoid GPU freezing issues
@@ -115,9 +146,13 @@ class MelGeneratorTraining(tf.keras.Model):
             )
         
         grads = tape.gradient(loss, self.base_model.trainable_variables)
+        
+        # Compute gradient norm
+        grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
+        
         self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
         
-        return {"loss": loss}
+        return {"loss": loss, "grad_norm": grad_norm}
 
 
 def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE, 
