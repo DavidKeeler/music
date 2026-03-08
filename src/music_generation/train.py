@@ -56,6 +56,14 @@ class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         progress = tf.clip_by_value(progress, 0.0, 1.0)
         cosine_lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (1 + tf.cos(3.14159 * progress))
         return tf.where(step < self.warmup_steps, warmup_lr, cosine_lr)
+    
+    def get_config(self):
+        return {
+            "base_lr": self.base_lr,
+            "warmup_steps": self.warmup_steps,
+            "total_steps": self.total_steps,
+            "min_lr": self.min_lr
+        }
 
 
 class MelGeneratorTraining(tf.keras.Model):
@@ -67,6 +75,18 @@ class MelGeneratorTraining(tf.keras.Model):
     
     def call(self, inputs, training=False):
         return self.base_model(inputs, training=training)
+    
+    def get_config(self):
+        """Return config for serialization."""
+        return {
+            "base_model": tf.keras.utils.serialize_keras_object(self.base_model)
+        }
+    
+    @classmethod
+    def from_config(cls, config):
+        """Reconstruct from config."""
+        base_model = tf.keras.utils.deserialize_keras_object(config["base_model"])
+        return cls(base_model)
     
     def train_step(self, data):
         x, y = data
@@ -84,9 +104,13 @@ class MelGeneratorTraining(tf.keras.Model):
             loss = tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))
             
             # NaN detection (use tf.cond for graph compatibility)
+            def warn_nan():
+                tf.print("⚠️  WARNING: NaN/Inf loss detected!")
+                return tf.constant(0)
+            
             tf.cond(
                 tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
-                lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),
+                warn_nan,
                 lambda: tf.constant(0)
             )
         

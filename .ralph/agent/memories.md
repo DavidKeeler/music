@@ -2,6 +2,18 @@
 
 ## Patterns
 
+### mem-1772936106-2798
+> Checkpoint validation pattern: After model.fit(), verify checkpoint_path.exists() and display file size. Raises FileNotFoundError if missing. Provides early detection of save failures.
+<!-- tags: training, validation, tensorflow | created: 2026-03-08 -->
+
+### mem-1772936061-5512
+> Model build verification pattern: After model.compile() and model.summary(), run a sample batch through base_model(x, training=False) to verify shapes and catch build errors before training starts. Use tf.debugging.assert_equal for shape validation.
+<!-- tags: training, validation, tensorflow | created: 2026-03-08 -->
+
+### mem-1772936008-e2e5
+> Dataset shape validation added to train.py: validates batch_size, mel channels (80), and input/target shape match after dataset creation. Provides early failure if dataset is misconfigured.
+<!-- tags: training, validation, tensorflow | created: 2026-03-08 -->
+
 ### mem-1772915646-8a3e
 > inference.py integration complete: MusicGenerationModel supports MelNormalizer (optional param), normalizes in both call() and generate(), from_checkpoints() supports vocoder_backend selection (hifigan/vocos/griffin-lim) and enable_fallback for automatic backend fallback. All 5 inference tests + 17 vocoder tests pass.
 <!-- tags: inference, vocoder, tensorflow | created: 2026-03-07 -->
