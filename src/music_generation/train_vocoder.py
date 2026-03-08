@@ -26,7 +26,16 @@ class VocoderTraining(tf.keras.Model):
         
         with tf.GradientTape() as tape:
             # Generate audio from mel
-            pred_audio = self.generator(mel, training=True)
+            # For HiFiGAN, call hifigan directly to avoid @tf.function decorator
+            # For other generators, call normally
+            if hasattr(self.generator, 'hifigan'):
+                pred_audio = self.generator.hifigan(mel, training=True)
+            else:
+                pred_audio = self.generator(mel, training=True)
+            
+            # Squeeze channel dimension if present [B, T, 1] -> [B, T]
+            if len(pred_audio.shape) == 3 and pred_audio.shape[-1] == 1:
+                pred_audio = tf.squeeze(pred_audio, axis=-1)
             
             # Trim to same length
             min_len = tf.minimum(tf.shape(pred_audio)[-1], tf.shape(target_audio)[-1])
@@ -39,11 +48,18 @@ class VocoderTraining(tf.keras.Model):
         # Compute gradients and update
         grads = tape.gradient(loss, self.generator.trainable_variables)
         
+        # Debug: check if gradients are None
+        if all(g is None for g in grads):
+            raise ValueError(f"All gradients are None! Loss: {loss}, trainable_vars: {len(self.generator.trainable_variables)}")
+        
+        # Filter out None gradients
+        grads_and_vars = [(g, v) for g, v in zip(grads, self.generator.trainable_variables) if g is not None]
+        
         # Compute gradient norm
-        grad_squares = [tf.reduce_sum(g**2) for g in grads if g is not None]
+        grad_squares = [tf.reduce_sum(g**2) for g, _ in grads_and_vars]
         grad_norm = tf.sqrt(tf.add_n(grad_squares)) if grad_squares else tf.constant(0.0)
         
-        self.optimizer.apply_gradients(zip(grads, self.generator.trainable_variables))
+        self.optimizer.apply_gradients(grads_and_vars)
         
         # Update metrics
         self.grad_norm_tracker.update_state(grad_norm)
