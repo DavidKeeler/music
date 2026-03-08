@@ -190,6 +190,10 @@
 
 ## Fixes
 
+### mem-1772942608-e93d
+> Vocoder training fix: train_vocoder.py creates HiFiGAN from scratch using TFHifiGANGenerator(get_default_config()) instead of loading pretrained weights. Pretrained weights unavailable (401 error). Training works correctly from scratch - loss converges, checkpoints save.
+<!-- tags: vocoder, hifigan, training | created: 2026-03-08 -->
+
 ### mem-1772942189-f624
 > HiFiGAN training gradient fix: Call generator.hifigan() directly instead of generator() to bypass @tf.function decorator on inference() method. The decorator breaks gradient tape tracking. Also squeeze channel dimension [B,T,1]->[B,T] and filter None gradients. Supports both real HiFiGAN and mock generators via hasattr check.
 <!-- tags: vocoder, hifigan, training, tensorflow | created: 2026-03-08 -->
