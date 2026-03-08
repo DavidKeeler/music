@@ -17,11 +17,9 @@ logger = logging.getLogger(__name__)
 
 def configure_memory():
     """Configure TensorFlow memory settings for resource-constrained environments."""
-    gpus = tf.config.list_physical_devices('GPU')
-    if gpus:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        logger.info(f"Enabled memory growth for {len(gpus)} GPU(s)")
+    # Force CPU-only on macOS to avoid GPU freezing issues
+    tf.config.set_visible_devices([], 'GPU')
+    logger.info("Configured TensorFlow to use CPU only")
 
 
 def check_batch_size(batch_size):
@@ -85,9 +83,12 @@ class MelGeneratorTraining(tf.keras.Model):
             # Loss: compare predictions at t with targets at t+1
             loss = tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))
             
-            # NaN detection
-            if tf.math.is_nan(loss) or tf.math.is_inf(loss):
-                tf.print("⚠️  WARNING: NaN/Inf loss detected!")
+            # NaN detection (use tf.cond for graph compatibility)
+            tf.cond(
+                tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
+                lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),
+                lambda: tf.constant(0)
+            )
         
         grads = tape.gradient(loss, self.base_model.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
@@ -104,6 +105,16 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
     print(f"Loading dataset from {data_dir}")
     dataset = create_dataset(data_dir, cache_dir, batch_size)
     
+    # Validate dataset shapes
+    print("Validating dataset shapes...")
+    for x, y in dataset.take(1):
+        print(f"  Input shape: {x.shape}")
+        print(f"  Target shape: {y.shape}")
+        tf.debugging.assert_equal(tf.shape(x)[0], batch_size, message="Batch size mismatch")
+        tf.debugging.assert_equal(tf.shape(x)[2], 80, message="Mel channels should be 80")
+        tf.debugging.assert_equal(tf.shape(x), tf.shape(y), message="Input and target shapes must match")
+    print("✓ Dataset validation passed")
+    
     steps_per_epoch = 100  # Adjust based on dataset size
     total_steps = steps_per_epoch * epochs
     
@@ -117,7 +128,7 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
     
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / "mel_generator"
+    checkpoint_path = checkpoint_dir / "mel_generator.keras"
     
     if resume_from:
         print(f"Resuming from {resume_from}")
