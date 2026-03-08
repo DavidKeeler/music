@@ -58,6 +58,9 @@ MIN_TF_RATIO = 0.05
 TF_DECAY_K = 1e-5
 # Warmup steps before decay starts (ratio stays at INITIAL_TF_RATIO)
 TF_WARMUP_STEPS = 0
+# Maximum context frames for autoregressive training (default: full sequence)
+# Trade-off: larger values enable longer-range dependencies but use more memory
+MAX_CONTEXT_FRAMES = SEQ_LEN
 
 # Inference Parameters
 # Temperature for sampling (1.0 = no scaling)
