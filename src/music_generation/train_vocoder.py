@@ -7,6 +7,8 @@ import tensorflow as tf
 from src.music_generation import vocoder
 from src.music_generation import losses
 from src.music_generation import config
+from src.music_generation.hifigan.generator import TFHifiGANGenerator
+from src.music_generation.hifigan.config import get_default_config
 
 
 class VocoderTraining(tf.keras.Model):
@@ -153,26 +155,29 @@ def main():
     
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     
-    # Load pretrained vocoder
-    print(f"Loading pretrained {args.backend} vocoder...")
+    # Create or load vocoder
+    print(f"Creating {args.backend} vocoder...")
     if args.backend == 'hifigan':
-        vocoder_model = vocoder.HiFiGANVocoder.from_pretrained(args.pretrained_path)
+        # Create HiFiGAN from scratch (pretrained weights unavailable)
+        hifigan_config = get_default_config()
+        generator = TFHifiGANGenerator(hifigan_config)
+        print("✓ HiFiGAN generator created from scratch")
     elif args.backend == 'vocos':
         vocoder_model = vocoder.load_vocos_vocoder()
+        generator = vocoder_model.model if hasattr(vocoder_model, 'model') else vocoder_model
     else:
         # Use fallback chain for other backends
         vocoder_model = vocoder.load_pretrained_vocoder(
             backend=args.backend,
             enable_fallback=False
         )
-    
-    # Extract generator for training
-    if hasattr(vocoder_model, 'generator') and vocoder_model.generator is not None:
-        generator = vocoder_model.generator
-    elif hasattr(vocoder_model, 'model'):
-        generator = vocoder_model.model
-    else:
-        generator = vocoder_model
+        # Extract generator for training
+        if hasattr(vocoder_model, 'generator') and vocoder_model.generator is not None:
+            generator = vocoder_model.generator
+        elif hasattr(vocoder_model, 'model'):
+            generator = vocoder_model.model
+        else:
+            generator = vocoder_model
     
     # Create dataset
     print(f"Loading dataset from {args.data_dir}...")

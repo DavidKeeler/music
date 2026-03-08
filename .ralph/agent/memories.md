@@ -2,6 +2,14 @@
 
 ## Patterns
 
+### mem-1772940316-1591
+> Vocoder initialization verified: fallback chain works correctly (HiFiGAN→Vocos→Griffin-Lim). Griffin-Lim successfully produces audio output with correct shapes. Must activate venv with 'source venv/bin/activate' before running Python scripts.
+<!-- tags: vocoder, testing, venv | created: 2026-03-08 -->
+
+### mem-1772938808-b507
+> VocoderDataset validated: loads 320 MusicNet files, produces correct shapes [B,T,80] mel and [B,8192] audio, all values finite and non-silent. Shuffle buffer fills slowly (~30s for 1000 samples) but works correctly.
+<!-- tags: vocoder, dataset, tensorflow | created: 2026-03-08 -->
+
 ### mem-1772936106-2798
 > Checkpoint validation pattern: After model.fit(), verify checkpoint_path.exists() and display file size. Raises FileNotFoundError if missing. Provides early detection of save failures.
 <!-- tags: training, validation, tensorflow | created: 2026-03-08 -->
@@ -181,6 +189,18 @@
 ## Decisions
 
 ## Fixes
+
+### mem-1772942189-f624
+> HiFiGAN training gradient fix: Call generator.hifigan() directly instead of generator() to bypass @tf.function decorator on inference() method. The decorator breaks gradient tape tracking. Also squeeze channel dimension [B,T,1]->[B,T] and filter None gradients. Supports both real HiFiGAN and mock generators via hasattr check.
+<!-- tags: vocoder, hifigan, training, tensorflow | created: 2026-03-08 -->
+
+### mem-1772938626-efd6
+> HiFiGAN pretrained weights unavailable: tensorspeech/tts-hifigan-ljspeech-en repo doesn't exist on Hugging Face (401 error). Model architecture works correctly and can be trained from scratch or loaded from local checkpoints. Fallback mechanism automatically uses Griffin-Lim for testing.
+<!-- tags: vocoder, hifigan, huggingface | created: 2026-03-08 -->
+
+### mem-1772938431-0723
+> huggingface_hub required for HiFiGAN vocoder: Install via pip, add to requirements.txt. Used by HiFiGANVocoder.from_pretrained() to download models from Hugging Face Hub.
+<!-- tags: vocoder, dependencies, huggingface | created: 2026-03-08 -->
 
 ### mem-1772907778-0464
 > tf.signal.frame crashes on Apple Silicon Metal with 'New volume mismatch' error. Use tf.gather + tf.einsum instead for windowed operations. Vectorized gather with indices = tf.range(T)[:, None] + tf.range(window_size)[None, :] works correctly.
