@@ -155,6 +155,15 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
     
     model.fit(dataset, epochs=epochs, steps_per_epoch=steps_per_epoch, callbacks=callbacks)
     
+    # Validate checkpoint was saved
+    print("Validating checkpoint...")
+    if checkpoint_path.exists():
+        print(f"✓ Checkpoint saved successfully: {checkpoint_path}")
+        print(f"  Checkpoint size: {checkpoint_path.stat().st_size / (1024*1024):.2f} MB")
+    else:
+        print(f"✗ Checkpoint not found at {checkpoint_path}")
+        raise FileNotFoundError(f"Expected checkpoint at {checkpoint_path}")
+    
     print(f"Training complete. Model saved to {checkpoint_path}")
 
 
