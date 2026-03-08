@@ -81,3 +81,53 @@ Start with Step 1: Add the schedule function. This is a pure function with no de
 **Commit:** a64cbbf - feat: add exponential_tf_schedule function for teacher forcing decay
 
 **Next task:** task-1772945577-8607 - Step 2: Update config with TF schedule params
+
+
+---
+
+## Iteration 2 - Completed
+
+### Task: task-1772945577-8607 - Step 2: Update config with TF schedule params
+
+**What I did:**
+- Added 4 teacher forcing schedule parameters to `src/music_generation/config.py`
+- Created comprehensive tests in `tests/test_scheduled_sampling.py`
+- All 9 tests pass (6 schedule function + 3 config tests)
+
+**Parameters added:**
+- `INITIAL_TF_RATIO = 1.0` - Initial teacher forcing ratio
+- `MIN_TF_RATIO = 0.05` - Minimum ratio floor
+- `TF_DECAY_K = 1e-5` - Exponential decay rate
+- `TF_WARMUP_STEPS = 0` - Warmup period before decay
+
+**Tests:**
+1. ✓ Config has all required parameters
+2. ✓ Default values are correct
+3. ✓ Values are in valid ranges (ratios in [0,1], min <= initial, k > 0, warmup >= 0)
+
+**Commit:** 78a6799 - feat: add teacher forcing schedule parameters to config
+
+**Next task:** task-1772945580-a91a - Step 3: Add TF ratio tracking to trainer
+
+
+---
+
+## Iteration 3 - In Progress
+
+### Task: task-1772945580-a91a - Step 3: Add TF ratio tracking to trainer
+
+**What I need to do:**
+- Add `tf_ratio` as non-trainable `tf.Variable` to `MelGeneratorTraining.__init__()`
+- Add `training_step` as non-trainable `tf.Variable` to track current step
+- Add `update_tf_ratio(step)` method that calls `exponential_tf_schedule()`
+- Add `tf_ratio_metric` as `tf.keras.metrics.Mean` to track and log the ratio
+- Update `train_step()` to:
+  - Call `update_tf_ratio()` at the start
+  - Update the metric
+  - Return ratio in the result dict
+- Import TF config parameters: `INITIAL_TF_RATIO`, `MIN_TF_RATIO`, `TF_DECAY_K`, `TF_WARMUP_STEPS`
+
+**Implementation approach:**
+- Keep it minimal - just add tracking infrastructure, no autoregressive logic yet
+- The ratio will be computed but not used in this step (that's Step 4)
+- Tests should verify: initialization, update logic, metric tracking, logging

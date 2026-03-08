@@ -94,3 +94,164 @@ class TestConfigParameters:
         assert config.MIN_TF_RATIO <= config.INITIAL_TF_RATIO
         assert config.TF_DECAY_K > 0
         assert config.TF_WARMUP_STEPS >= 0
+
+
+
+class SimpleMelGenerator(tf.keras.Model):
+    """Minimal mock generator for testing."""
+    def __init__(self):
+        super().__init__()
+        self.dense = tf.keras.layers.Dense(80)
+    
+    def call(self, x, training=False):
+        return self.dense(x)
+
+
+class TestTFRatioTracking:
+    """Test teacher forcing ratio tracking in trainer."""
+    
+    def test_initialization(self):
+        """Trainer should initialize with correct TF ratio."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(base_model)
+        
+        assert trainer.tf_ratio.numpy() == config.INITIAL_TF_RATIO
+        assert trainer.training_step.numpy() == 0
+        assert trainer.initial_tf_ratio == config.INITIAL_TF_RATIO
+        assert trainer.min_tf_ratio == config.MIN_TF_RATIO
+        assert trainer.decay_k == config.TF_DECAY_K
+        assert trainer.warmup_steps == config.TF_WARMUP_STEPS
+    
+    def test_custom_initialization(self):
+        """Trainer should accept custom TF parameters."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(
+            base_model,
+            initial_tf_ratio=0.8,
+            min_tf_ratio=0.1,
+            decay_k=1e-4,
+            warmup_steps=1000
+        )
+        
+        assert tf.abs(trainer.tf_ratio - 0.8) < 1e-6
+        assert trainer.initial_tf_ratio == 0.8
+        assert trainer.min_tf_ratio == 0.1
+        assert trainer.decay_k == 1e-4
+        assert trainer.warmup_steps == 1000
+    
+    def test_update_tf_ratio(self):
+        """update_tf_ratio should update ratio and step."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(base_model, initial_tf_ratio=1.0, decay_k=1e-3)
+        
+        initial_ratio = trainer.tf_ratio.numpy()
+        trainer.update_tf_ratio()
+        
+        assert trainer.training_step.numpy() == 1
+        # Ratio should decrease (or stay at min)
+        assert trainer.tf_ratio.numpy() <= initial_ratio
+    
+    def test_warmup_period(self):
+        """Ratio should stay constant during warmup."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(
+            base_model,
+            initial_tf_ratio=1.0,
+            warmup_steps=10,
+            decay_k=1e-3
+        )
+        
+        # During warmup (steps 0-9), ratio should stay at initial
+        for i in range(10):
+            trainer.update_tf_ratio()
+            # After update, training_step is i+1, but ratio was computed using step i
+            assert tf.abs(trainer.tf_ratio - 1.0) < 1e-6, f"Failed at step {i}"
+        
+        # At step 10 (after 10 updates), we're at the boundary
+        # The ratio was computed using step 9, so still 1.0
+        assert trainer.training_step.numpy() == 10
+        assert tf.abs(trainer.tf_ratio - 1.0) < 1e-6
+        
+        # After one more update, we compute using step 10 (step_after_warmup=0), still 1.0
+        trainer.update_tf_ratio()
+        assert trainer.training_step.numpy() == 11
+        assert tf.abs(trainer.tf_ratio - 1.0) < 1e-6
+        
+        # After another update, we compute using step 11 (step_after_warmup=1), decay starts
+        trainer.update_tf_ratio()
+        assert trainer.training_step.numpy() == 12
+        assert trainer.tf_ratio < 1.0
+    
+    def test_ratio_metric_tracking(self):
+        """Trainer should track ratio as a metric."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(base_model)
+        
+        assert hasattr(trainer, 'tf_ratio_metric')
+        assert isinstance(trainer.tf_ratio_metric, tf.keras.metrics.Mean)
+        assert trainer.tf_ratio_metric.name == "tf_ratio"
+    
+    def test_metrics_property(self):
+        """Trainer should expose metrics for auto-reset."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(base_model)
+        
+        metrics = trainer.metrics
+        assert len(metrics) == 1
+        assert metrics[0] is trainer.tf_ratio_metric
+    
+    def test_train_step_updates_ratio(self):
+        """train_step should update and log TF ratio."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(base_model)
+        trainer.compile(optimizer='adam')
+        
+        # Create dummy batch
+        x = tf.random.normal([2, 10, 80])
+        y = tf.random.normal([2, 10, 80])
+        
+        initial_step = trainer.training_step.numpy()
+        result = trainer.train_step((x, y))
+        
+        # Should increment step
+        assert trainer.training_step.numpy() == initial_step + 1
+        
+        # Should return tf_ratio in result
+        assert 'tf_ratio' in result
+        assert 0.0 <= result['tf_ratio'].numpy() <= 1.0
+    
+    def test_serialization(self):
+        """Trainer should serialize/deserialize with TF params."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(
+            base_model,
+            initial_tf_ratio=0.9,
+            min_tf_ratio=0.1,
+            decay_k=1e-4,
+            warmup_steps=500
+        )
+        
+        config_dict = trainer.get_config()
+        assert config_dict['initial_tf_ratio'] == 0.9
+        assert config_dict['min_tf_ratio'] == 0.1
+        assert config_dict['decay_k'] == 1e-4
+        assert config_dict['warmup_steps'] == 500
+        
+        # Note: Full deserialization requires registered models
+        # Just verify config structure is correct

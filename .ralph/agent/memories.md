@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772945717-7048
+> Config parameters for teacher forcing schedule: INITIAL_TF_RATIO=1.0, MIN_TF_RATIO=0.05, TF_DECAY_K=1e-5, TF_WARMUP_STEPS=0. Located in config.py. Tests verify existence, defaults, and valid ranges.
+<!-- tags: teacher-forcing, config, tensorflow | created: 2026-03-08 -->
+
 ### mem-1772945660-1bcf
 > exponential_tf_schedule function: Pure function implementing ε(step) = max(ε_min, ε_initial * exp(-k * step)). Returns float32 tensor, accepts int or tensor input. Default params: initial_ratio=1.0, min_ratio=0.05, decay_k=1e-5. Located in train.py.
 <!-- tags: teacher-forcing, schedule, tensorflow | created: 2026-03-08 -->

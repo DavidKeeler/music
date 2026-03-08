@@ -7,7 +7,8 @@ import psutil
 
 from .config import (
     DATA_DIR, CACHE_DIR, CHECKPOINT_DIR,
-    BATCH_SIZE, SEQ_LEN, LEARNING_RATE, NUM_EPOCHS
+    BATCH_SIZE, SEQ_LEN, LEARNING_RATE, NUM_EPOCHS,
+    INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS
 )
 from .dataset import create_dataset
 from .model import MelGenerator
@@ -100,26 +101,74 @@ class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 class MelGeneratorTraining(tf.keras.Model):
     """Simplified training wrapper with parallel processing."""
     
-    def __init__(self, base_model):
+    def __init__(self, base_model, initial_tf_ratio=INITIAL_TF_RATIO, 
+                 min_tf_ratio=MIN_TF_RATIO, decay_k=TF_DECAY_K, warmup_steps=TF_WARMUP_STEPS):
         super().__init__()
         self.base_model = base_model
+        
+        # Teacher forcing schedule parameters
+        self.initial_tf_ratio = initial_tf_ratio
+        self.min_tf_ratio = min_tf_ratio
+        self.decay_k = decay_k
+        self.warmup_steps = warmup_steps
+        
+        # Non-trainable variables for tracking
+        self.tf_ratio = tf.Variable(initial_tf_ratio, trainable=False, dtype=tf.float32, name="tf_ratio")
+        self.training_step = tf.Variable(0, trainable=False, dtype=tf.int64, name="training_step")
+        
+        # Metric for logging
+        self.tf_ratio_metric = tf.keras.metrics.Mean(name="tf_ratio")
+    
+    def update_tf_ratio(self):
+        """Update teacher forcing ratio based on current training step."""
+        # Apply warmup: keep initial ratio until warmup_steps
+        step_after_warmup = tf.maximum(0, self.training_step - self.warmup_steps)
+        
+        # Compute new ratio using exponential schedule
+        new_ratio = exponential_tf_schedule(
+            step=step_after_warmup,
+            initial_ratio=self.initial_tf_ratio,
+            min_ratio=self.min_tf_ratio,
+            decay_k=self.decay_k
+        )
+        
+        self.tf_ratio.assign(new_ratio)
+        self.training_step.assign_add(1)
     
     def call(self, inputs, training=False):
         return self.base_model(inputs, training=training)
     
+    @property
+    def metrics(self):
+        """Return metrics for auto-reset between epochs."""
+        return [self.tf_ratio_metric]
+    
     def get_config(self):
         """Return config for serialization."""
         return {
-            "base_model": tf.keras.utils.serialize_keras_object(self.base_model)
+            "base_model": tf.keras.utils.serialize_keras_object(self.base_model),
+            "initial_tf_ratio": float(self.initial_tf_ratio),
+            "min_tf_ratio": float(self.min_tf_ratio),
+            "decay_k": float(self.decay_k),
+            "warmup_steps": int(self.warmup_steps)
         }
     
     @classmethod
     def from_config(cls, config):
         """Reconstruct from config."""
         base_model = tf.keras.utils.deserialize_keras_object(config["base_model"])
-        return cls(base_model)
+        return cls(
+            base_model,
+            initial_tf_ratio=config.get("initial_tf_ratio", INITIAL_TF_RATIO),
+            min_tf_ratio=config.get("min_tf_ratio", MIN_TF_RATIO),
+            decay_k=config.get("decay_k", TF_DECAY_K),
+            warmup_steps=config.get("warmup_steps", TF_WARMUP_STEPS)
+        )
     
     def train_step(self, data):
+        # Update teacher forcing ratio at the start of each step
+        self.update_tf_ratio()
+        
         x, y = data
         
         # Shape validation
@@ -152,7 +201,10 @@ class MelGeneratorTraining(tf.keras.Model):
         
         self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
         
-        return {"loss": loss, "grad_norm": grad_norm}
+        # Update metric
+        self.tf_ratio_metric.update_state(self.tf_ratio)
+        
+        return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
 
 
 def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE, 
