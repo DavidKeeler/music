@@ -2,6 +2,7 @@
 import tensorflow as tf
 import pytest
 from src.music_generation.train import exponential_tf_schedule
+from src.music_generation import config
 
 
 class TestExponentialTFSchedule:
@@ -67,3 +68,29 @@ class TestExponentialTFSchedule:
         # All should be >= min_ratio
         for ratio in ratios:
             assert ratio >= 0.05
+
+
+class TestConfigParameters:
+    """Test that config has required teacher forcing parameters."""
+    
+    def test_config_has_tf_parameters(self):
+        """Config should define all teacher forcing schedule parameters."""
+        assert hasattr(config, 'INITIAL_TF_RATIO')
+        assert hasattr(config, 'MIN_TF_RATIO')
+        assert hasattr(config, 'TF_DECAY_K')
+        assert hasattr(config, 'TF_WARMUP_STEPS')
+    
+    def test_config_default_values(self):
+        """Config parameters should have correct default values."""
+        assert config.INITIAL_TF_RATIO == 1.0
+        assert config.MIN_TF_RATIO == 0.05
+        assert config.TF_DECAY_K == 1e-5
+        assert config.TF_WARMUP_STEPS == 0
+    
+    def test_config_values_are_valid(self):
+        """Config values should be in valid ranges."""
+        assert 0.0 <= config.INITIAL_TF_RATIO <= 1.0
+        assert 0.0 <= config.MIN_TF_RATIO <= 1.0
+        assert config.MIN_TF_RATIO <= config.INITIAL_TF_RATIO
+        assert config.TF_DECAY_K > 0
+        assert config.TF_WARMUP_STEPS >= 0

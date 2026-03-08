@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1772945660-1bcf
+> exponential_tf_schedule function: Pure function implementing ε(step) = max(ε_min, ε_initial * exp(-k * step)). Returns float32 tensor, accepts int or tensor input. Default params: initial_ratio=1.0, min_ratio=0.05, decay_k=1e-5. Located in train.py.
+<!-- tags: teacher-forcing, schedule, tensorflow | created: 2026-03-08 -->
+
 ### mem-1772940316-1591
 > Vocoder initialization verified: fallback chain works correctly (HiFiGAN→Vocos→Griffin-Lim). Griffin-Lim successfully produces audio output with correct shapes. Must activate venv with 'source venv/bin/activate' before running Python scripts.
 <!-- tags: vocoder, testing, venv | created: 2026-03-08 -->

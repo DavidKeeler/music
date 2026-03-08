@@ -49,6 +49,16 @@ LEARNING_RATE = 1e-4
 # Number of training epochs (reduced from 20 to 3 for faster iteration on CPU)
 NUM_EPOCHS = 3
 
+# Teacher Forcing Schedule Parameters
+# Initial teacher forcing ratio (1.0 = always use ground truth)
+INITIAL_TF_RATIO = 1.0
+# Minimum teacher forcing ratio (floor for exponential decay)
+MIN_TF_RATIO = 0.05
+# Exponential decay rate (k in ε(step) = max(ε_min, ε_initial * exp(-k * step)))
+TF_DECAY_K = 1e-5
+# Warmup steps before decay starts (ratio stays at INITIAL_TF_RATIO)
+TF_WARMUP_STEPS = 0
+
 # Inference Parameters
 # Temperature for sampling (1.0 = no scaling)
 TEMPERATURE = 1.0

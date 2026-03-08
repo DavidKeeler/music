@@ -50,3 +50,34 @@ Following the 8-step plan from specs:
 
 ### Next Action
 Start with Step 1: Add the schedule function. This is a pure function with no dependencies, easy to test.
+
+
+---
+
+## Iteration 1 - Completed
+
+### Task: task-1772945574-e628 - Step 1: Add exponential_tf_schedule function
+
+**What I did:**
+- Added `exponential_tf_schedule()` function to `src/music_generation/train.py`
+- Implemented formula: `ε(step) = max(ε_min, ε_initial * exp(-k * step))`
+- Created comprehensive unit tests in `tests/test_scheduled_sampling.py`
+- All 6 tests pass
+
+**Implementation details:**
+- Pure function with no side effects
+- Accepts int or tf.Tensor for step parameter
+- Returns float32 tensor
+- Default parameters: initial_ratio=1.0, min_ratio=0.05, decay_k=1e-5
+
+**Tests:**
+1. ✓ Initial step returns initial_ratio
+2. ✓ Respects min_ratio floor
+3. ✓ Exponential decay formula correct
+4. ✓ Different decay rates work as expected
+5. ✓ Accepts tensor input
+6. ✓ Batch computation works
+
+**Commit:** a64cbbf - feat: add exponential_tf_schedule function for teacher forcing decay
+
+**Next task:** task-1772945577-8607 - Step 2: Update config with TF schedule params
