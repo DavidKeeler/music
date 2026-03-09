@@ -210,6 +210,10 @@
 
 ## Fixes
 
+### mem-1773015504-2e95
+> Teacher forcing fixes complete: Fixed type mismatch (cast 0 and warmup_steps to int64) and memory leak (tf.stop_gradient on next_input). Added 8 comprehensive tests (3 type, 3 gradient, 2 integration). All tests pass. Memory reduced from 168 MB to 0.65 MB.
+<!-- tags: teacher-forcing, tensorflow, testing | created: 2026-03-09 -->
+
 ### mem-1773015168-e68a
 > Memory leak fix: Wrap next_input with tf.stop_gradient() in autoregressive loop to prevent GradientTape from tracking ar_input growth. Reduces memory from 168 MB to 0.65 MB. Gradients still flow through preds list.
 <!-- tags: teacher-forcing, tensorflow, memory | created: 2026-03-09 -->
