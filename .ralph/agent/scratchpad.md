@@ -1,133 +1,89 @@
-# Scratchpad: Teacher Forcing Schedule Implementation
+# Scratchpad: Fix Teacher Forcing Type Mismatch and Memory Issue
 
-## Iteration 1 - Initial Analysis
+## Understanding
 
-### Understanding the Objective
-Implement exponential decay scheduled sampling for the mel spectrogram generator to reduce exposure bias. The current training uses pure teacher forcing (always feeding ground truth), but during inference the model uses its own predictions, causing train-test mismatch.
+The objective is to fix two critical bugs in `src/music_generation/train.py`:
 
-### Current State Analysis
-From examining the codebase:
+1. **Line 125 - Type mismatch**: `self.training_step` is int64 but `self.warmup_steps` is int32, causing TypeError in subtraction
+2. **Line 220 - Memory explosion**: GradientTape tracks the growing `ar_input` tensor through the autoregressive loop, causing 168 MB memory usage instead of 0.65 MB
 
-1. **train.py** - Has `MelGeneratorTraining` wrapper with `train_step()` that:
-   - Uses parallel training (single forward pass, not autoregressive loop)
-   - Compares predictions at t with targets at t+1
-   - Loss: `preds[:, :-1, :] - y[:, 1:, :]`
-   - This is NOT autoregressive teacher forcing - it's parallel training
+## Analysis
 
-2. **config.py** - Has basic training params but NO teacher forcing schedule params yet
+**Fix 1 (Line 125):**
+- Current: `step_after_warmup = tf.maximum(0, self.training_step - self.warmup_steps)`
+- Issue: Type mismatch between int64 and int32
+- Solution: Cast `self.warmup_steps` to int64
+- Impact: Single line change, no side effects
 
-3. **Memory patterns from memories**:
-   - Parallel training already implemented (mem-1772814618-c42c)
-   - Single forward pass with causal masking, not autoregressive loop
-   - Memory scales O(model) not O(seq_len × model)
+**Fix 2 (Line 220):**
+- Current: `ar_input = tf.concat([ar_input, next_input], axis=1)`
+- Issue: GradientTape tracks ar_input growth, creating massive computation graph
+- Solution: Wrap `next_input` with `tf.stop_gradient()` since ar_input is just a container
+- Impact: Single line change, gradients still flow through `preds` list (which is what we want)
 
-### Critical Realization
-The current training is ALREADY parallel (not autoregressive). The design doc assumes autoregressive training with teacher forcing, but the actual implementation uses parallel training with causal attention.
+## Plan
 
-**This changes the implementation approach:**
-- Can't do "scheduled sampling" in the traditional sense (mixing ground truth and predictions per timestep)
-- Need to implement scheduled sampling at the SEQUENCE level, not timestep level
-- OR need to switch to autoregressive training loop (but this contradicts the parallel training optimization)
+Following the spec's 6-step plan:
+1. Fix type mismatch in update_tf_ratio() - line 125
+2. Fix memory leak in autoregressive loop - line 220
+3. Add unit tests for type compatibility
+4. Add unit tests for gradient flow
+5. Add integration test for full training
+6. Manual testing and verification
 
-### Decision Point
-Two options:
-1. **Keep parallel training** - Implement sequence-level scheduled sampling (use model predictions for some sequences, ground truth for others)
-2. **Switch to autoregressive** - Implement timestep-level scheduled sampling as designed (but loses parallel training benefits)
+Each step is atomic and testable.
 
-The design doc explicitly requires timestep-level scheduled sampling with autoregressive generation. This means we need to implement the autoregressive training loop with scheduled sampling, even though it's slower than parallel training.
+## Implementation Strategy
 
-### Plan
-Following the 8-step plan from specs:
+- Make both fixes first (they're independent)
+- Create comprehensive test suite in tests/test_train.py
+- Run tests to verify both fixes work
+- Commit atomically
 
-1. **Add schedule function** - Pure function for exponential decay
-2. **Update config** - Add 4 new parameters
-3. **Add ratio tracking** - Modify trainer to track and update ratio
-4. **Implement autoregressive training step** - Core implementation with memory optimizations
-5. **Update training loop** - Integrate scheduled sampling
-6. **Add validation** - Pure autoregressive evaluation
-7. **Update checkpoints** - Save/restore ratio state
-8. **Add tests** - Comprehensive coverage
+## Next Steps
 
-### Next Action
-Start with Step 1: Add the schedule function. This is a pure function with no dependencies, easy to test.
-
+Create tasks for each step in the plan.
 
 ---
 
 ## Iteration 1 - Completed
 
-### Task: task-1772945574-e628 - Step 1: Add exponential_tf_schedule function
+### What I Did
+- Applied both fixes to `src/music_generation/train.py`:
+  1. Line 125: Added `tf.cast(self.warmup_steps, tf.int64)` to fix type mismatch
+  2. Line 223: Added `tf.stop_gradient(next_input)` to fix memory leak
+- Verified both fixes work with quick test
+- Committed changes with descriptive message
+- Closed both fix tasks
 
-**What I did:**
-- Added `exponential_tf_schedule()` function to `src/music_generation/train.py`
-- Implemented formula: `ε(step) = max(ε_min, ε_initial * exp(-k * step))`
-- Created comprehensive unit tests in `tests/test_scheduled_sampling.py`
-- All 6 tests pass
+### What I Learned
+- The autoregressive training implementation was already in place from a previous iteration
+- Both fixes are minimal one-line changes as specified
+- Quick verification shows no TypeError and training step works correctly
 
-**Implementation details:**
-- Pure function with no side effects
-- Accepts int or tf.Tensor for step parameter
-- Returns float32 tensor
-- Default parameters: initial_ratio=1.0, min_ratio=0.05, decay_k=1e-5
-
-**Tests:**
-1. ✓ Initial step returns initial_ratio
-2. ✓ Respects min_ratio floor
-3. ✓ Exponential decay formula correct
-4. ✓ Different decay rates work as expected
-5. ✓ Accepts tensor input
-6. ✓ Batch computation works
-
-**Commit:** a64cbbf - feat: add exponential_tf_schedule function for teacher forcing decay
-
-**Next task:** task-1772945577-8607 - Step 2: Update config with TF schedule params
-
+### Next Steps
+- Task task-1773015090-68b9 is now ready: Add unit tests for type compatibility
+- After that: Add gradient flow tests and integration tests
 
 ---
 
 ## Iteration 2 - Completed
 
-### Task: task-1772945577-8607 - Step 2: Update config with TF schedule params
+### What I Did
+- Created comprehensive unit tests in `tests/test_train.py`:
+  - TestTypeCompatibility: 3 tests verifying no TypeError, warmup behavior, and type consistency
+  - TestGradientFlow: 3 tests verifying gradients flow correctly, loss consistency, and memory efficiency
+- All 6 tests pass successfully
+- Committed changes with descriptive message
+- Closed both test tasks (task-1773015090-68b9 and task-1773015093-1d9d)
 
-**What I did:**
-- Added 4 teacher forcing schedule parameters to `src/music_generation/config.py`
-- Created comprehensive tests in `tests/test_scheduled_sampling.py`
-- All 9 tests pass (6 schedule function + 3 config tests)
+### What I Learned
+- Tests use SimpleMelGenerator mock to avoid complex dependencies
+- Type compatibility tests verify warmup behavior and int64 casting
+- Gradient flow tests verify stop_gradient doesn't affect loss values (only backprop)
+- Memory efficiency test confirms GradientTape doesn't track ar_input growth
 
-**Parameters added:**
-- `INITIAL_TF_RATIO = 1.0` - Initial teacher forcing ratio
-- `MIN_TF_RATIO = 0.05` - Minimum ratio floor
-- `TF_DECAY_K = 1e-5` - Exponential decay rate
-- `TF_WARMUP_STEPS = 0` - Warmup period before decay
+### Next Steps
+- Check remaining tasks - integration test may be next
+- All unit tests are complete and passing
 
-**Tests:**
-1. ✓ Config has all required parameters
-2. ✓ Default values are correct
-3. ✓ Values are in valid ranges (ratios in [0,1], min <= initial, k > 0, warmup >= 0)
-
-**Commit:** 78a6799 - feat: add teacher forcing schedule parameters to config
-
-**Next task:** task-1772945580-a91a - Step 3: Add TF ratio tracking to trainer
-
-
----
-
-## Iteration 3 - In Progress
-
-### Task: task-1772945580-a91a - Step 3: Add TF ratio tracking to trainer
-
-**What I need to do:**
-- Add `tf_ratio` as non-trainable `tf.Variable` to `MelGeneratorTraining.__init__()`
-- Add `training_step` as non-trainable `tf.Variable` to track current step
-- Add `update_tf_ratio(step)` method that calls `exponential_tf_schedule()`
-- Add `tf_ratio_metric` as `tf.keras.metrics.Mean` to track and log the ratio
-- Update `train_step()` to:
-  - Call `update_tf_ratio()` at the start
-  - Update the metric
-  - Return ratio in the result dict
-- Import TF config parameters: `INITIAL_TF_RATIO`, `MIN_TF_RATIO`, `TF_DECAY_K`, `TF_WARMUP_STEPS`
-
-**Implementation approach:**
-- Keep it minimal - just add tracking infrastructure, no autoregressive logic yet
-- The ratio will be computed but not used in this step (that's Step 4)
-- Tests should verify: initialization, update logic, metric tracking, logging

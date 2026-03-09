@@ -123,7 +123,7 @@ class MelGeneratorTraining(tf.keras.Model):
         """Update teacher forcing ratio based on current training step."""
         # Apply warmup: keep initial ratio until warmup_steps
         # Cast warmup_steps to int64 for type compatibility with training_step
-        step_after_warmup = tf.maximum(0, self.training_step - tf.cast(self.warmup_steps, tf.int64))
+        step_after_warmup = tf.maximum(tf.cast(0, tf.int64), self.training_step - tf.cast(self.warmup_steps, tf.int64))
         
         # Compute new ratio using exponential schedule
         new_ratio = exponential_tf_schedule(

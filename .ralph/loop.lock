@@ -1,5 +1,5 @@
 {
-  "pid": 9574,
-  "started": "2026-03-08T04:52:14.051061Z",
-  "prompt": "# PROMPT.md\n\n## Objective\n\nImplement exponential decay scheduled sampling for the mel spectrogram g..."
+  "pid": 20221,
+  "started": "2026-03-09T00:10:49.779946Z",
+  "prompt": "# PROMPT: Fix Teacher Forcing Type Mismatch and Memory Issue\n\n## Objective\n\nFix two critical bugs i..."
 }

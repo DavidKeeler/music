@@ -255,3 +255,93 @@ class TestTFRatioTracking:
         
         # Note: Full deserialization requires registered models
         # Just verify config structure is correct
+
+
+class TestAutoregressiveTrainingStep:
+    """Test autoregressive training step with scheduled sampling."""
+    
+    def test_pure_teacher_forcing(self):
+        """Test with tf_ratio=1.0 (pure teacher forcing)."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(base_model, initial_tf_ratio=1.0)
+        trainer.compile(optimizer='adam')
+        
+        x = tf.random.normal([2, 5, 80])
+        y = tf.random.normal([2, 5, 80])
+        
+        result = trainer.train_step((x, y))
+        
+        assert 'loss' in result
+        assert 'tf_ratio' in result
+        assert tf.abs(result['tf_ratio'] - 1.0) < 1e-6
+        assert not tf.math.is_nan(result['loss'])
+    
+    def test_pure_autoregressive(self):
+        """Test with tf_ratio=0.0 (pure autoregressive)."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(base_model, initial_tf_ratio=0.0, min_tf_ratio=0.0)
+        trainer.compile(optimizer='adam')
+        
+        x = tf.random.normal([2, 5, 80])
+        y = tf.random.normal([2, 5, 80])
+        
+        result = trainer.train_step((x, y))
+        
+        assert 'loss' in result
+        assert 'tf_ratio' in result
+        assert tf.abs(result['tf_ratio'] - 0.0) < 1e-6
+        assert not tf.math.is_nan(result['loss'])
+    
+    def test_mixed_sampling(self):
+        """Test with tf_ratio=0.5 (mixed sampling)."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(base_model, initial_tf_ratio=0.5)
+        trainer.compile(optimizer='adam')
+        
+        x = tf.random.normal([2, 5, 80])
+        y = tf.random.normal([2, 5, 80])
+        
+        result = trainer.train_step((x, y))
+        
+        assert 'loss' in result
+        assert 'tf_ratio' in result
+        assert tf.abs(result['tf_ratio'] - 0.5) < 1e-6
+        assert not tf.math.is_nan(result['loss'])
+    
+    def test_gradients_flow(self):
+        """Test that gradients flow correctly."""
+        from src.music_generation.train import MelGeneratorTraining
+        
+        base_model = SimpleMelGenerator()
+        trainer = MelGeneratorTraining(base_model, initial_tf_ratio=0.0, min_tf_ratio=0.0)
+        trainer.compile(optimizer='adam')
+        
+        x = tf.random.normal([2, 5, 80])
+        y = tf.random.normal([2, 5, 80])
+        
+        # Build the model first
+        _ = trainer.train_step((x, y))
+        
+        # Get initial weights
+        initial_weights = [w.numpy().copy() for w in trainer.base_model.trainable_variables]
+        
+        # Run training step again
+        result = trainer.train_step((x, y))
+        
+        # Check that weights changed
+        final_weights = [w.numpy() for w in trainer.base_model.trainable_variables]
+        
+        import numpy as np
+        weights_changed = any(
+            not np.allclose(w1, w2, atol=1e-6)
+            for w1, w2 in zip(initial_weights, final_weights)
+        )
+        
+        assert weights_changed, "Weights should change after training step"
+        assert result['grad_norm'] > 0, "Gradient norm should be positive"

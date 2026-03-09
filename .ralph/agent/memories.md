@@ -2,6 +2,18 @@
 
 ## Patterns
 
+### mem-1773015254-0815
+> Unit tests for train.py fixes: TestTypeCompatibility verifies no TypeError in update_tf_ratio() and warmup behavior. TestGradientFlow verifies gradients flow through preds list, loss values identical with/without stop_gradient, and memory efficiency. Uses SimpleMelGenerator mock. All 6 tests pass.
+<!-- tags: testing, teacher-forcing, tensorflow | created: 2026-03-09 -->
+
+### mem-1772998063-bc51
+> MAX_CONTEXT_FRAMES config parameter: Added to config.py after TF_WARMUP_STEPS, defaults to SEQ_LEN (512). Controls autoregressive context window size. Trade-off: larger values enable longer-range dependencies but use more memory.
+<!-- tags: teacher-forcing, config, tensorflow | created: 2026-03-08 -->
+
+### mem-1772946365-fc8a
+> MelGeneratorTraining tracks TF ratio: tf_ratio Variable (non-trainable), training_step Variable, update_tf_ratio() method with warmup support, tf_ratio_metric for logging. Ratio updated at start of train_step(), logged in result dict. Warmup: step_after_warmup = max(0, step - warmup_steps).
+<!-- tags: teacher-forcing, training, tensorflow | created: 2026-03-08 -->
+
 ### mem-1772945717-7048
 > Config parameters for teacher forcing schedule: INITIAL_TF_RATIO=1.0, MIN_TF_RATIO=0.05, TF_DECAY_K=1e-5, TF_WARMUP_STEPS=0. Located in config.py. Tests verify existence, defaults, and valid ranges.
 <!-- tags: teacher-forcing, config, tensorflow | created: 2026-03-08 -->
@@ -197,6 +209,14 @@
 ## Decisions
 
 ## Fixes
+
+### mem-1773015168-e68a
+> Memory leak fix: Wrap next_input with tf.stop_gradient() in autoregressive loop to prevent GradientTape from tracking ar_input growth. Reduces memory from 168 MB to 0.65 MB. Gradients still flow through preds list.
+<!-- tags: teacher-forcing, tensorflow, memory | created: 2026-03-09 -->
+
+### mem-1773015165-e26f
+> Type mismatch fix: Cast warmup_steps to int64 in update_tf_ratio() to match training_step type. Single line: tf.cast(self.warmup_steps, tf.int64)
+<!-- tags: teacher-forcing, tensorflow, types | created: 2026-03-09 -->
 
 ### mem-1772942608-e93d
 > Vocoder training fix: train_vocoder.py creates HiFiGAN from scratch using TFHifiGANGenerator(get_default_config()) instead of loading pretrained weights. Pretrained weights unavailable (401 error). Training works correctly from scratch - loss converges, checkpoints save.

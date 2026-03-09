@@ -195,5 +195,122 @@ class TestGradientFlow(tf.test.TestCase):
             self.assertIsNotNone(grad)
 
 
+class TestIntegration(tf.test.TestCase):
+    """Integration tests for full training with both fixes."""
+    
+    def test_full_training_100_steps(self):
+        """Verify training runs for 100 steps without OOM or type errors."""
+        # Force eager execution for this test
+        tf.config.run_functions_eagerly(True)
+        
+        model = SimpleMelGenerator()
+        training_model = MelGeneratorTraining(
+            model,
+            initial_tf_ratio=1.0,
+            min_tf_ratio=0.05,
+            decay_k=1e-5,
+            warmup_steps=50
+        )
+        
+        # Compile model
+        training_model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
+        
+        # Create sample data
+        batch_size = 2
+        seq_len = 32
+        x = tf.random.normal([batch_size, seq_len, 80])
+        y = tf.random.normal([batch_size, seq_len, 80])
+        
+        # Train for 100 steps - should not raise OOM or TypeError
+        for step in range(100):
+            loss_dict = training_model.train_step((x, y))
+            
+            # Verify loss is valid
+            self.assertIsNotNone(loss_dict)
+            self.assertIn('loss', loss_dict)
+            self.assertFalse(tf.math.is_nan(loss_dict['loss']))
+            self.assertFalse(tf.math.is_inf(loss_dict['loss']))
+        
+        # Verify tf_ratio was updated
+        self.assertLess(training_model.tf_ratio.numpy(), 1.0)
+        self.assertGreaterEqual(training_model.tf_ratio.numpy(), 0.05)
+        
+        # Verify training_step was incremented
+        self.assertEqual(training_model.training_step.numpy(), 100)
+        
+        tf.config.run_functions_eagerly(False)
+    
+    def test_checkpoint_save_and_load(self):
+        """Verify checkpoints can be saved and loaded correctly."""
+        import tempfile
+        import os
+        
+        # Force eager execution for this test
+        tf.config.run_functions_eagerly(True)
+        
+        # Create and train model
+        model = SimpleMelGenerator()
+        training_model = MelGeneratorTraining(
+            model,
+            initial_tf_ratio=1.0,
+            min_tf_ratio=0.05,
+            decay_k=1e-5,
+            warmup_steps=50
+        )
+        training_model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
+        
+        # Train for a few steps to build the model
+        batch_size = 2
+        seq_len = 16
+        x = tf.random.normal([batch_size, seq_len, 80])
+        y = tf.random.normal([batch_size, seq_len, 80])
+        
+        for _ in range(10):
+            training_model.train_step((x, y))
+        
+        # Get model weights before saving
+        weights_before = [w.numpy() for w in training_model.base_model.trainable_variables]
+        
+        # Save checkpoint
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_path = os.path.join(tmpdir, 'checkpoint.weights.h5')
+            
+            # Build the model explicitly
+            training_model.build(input_shape=(batch_size, seq_len, 80))
+            training_model.save_weights(checkpoint_path)
+            
+            # Create new model and load checkpoint
+            new_model = SimpleMelGenerator()
+            new_training_model = MelGeneratorTraining(
+                new_model,
+                initial_tf_ratio=1.0,
+                min_tf_ratio=0.05,
+                decay_k=1e-5,
+                warmup_steps=50
+            )
+            new_training_model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
+            
+            # Build model with same input shape and run one step to initialize weights
+            new_training_model.build(input_shape=(batch_size, seq_len, 80))
+            new_training_model.train_step((x, y))
+            
+            # Load checkpoint
+            new_training_model.load_weights(checkpoint_path)
+            
+            # Verify model weights were restored
+            weights_after = [w.numpy() for w in new_training_model.base_model.trainable_variables]
+            self.assertEqual(len(weights_before), len(weights_after))
+            for w_before, w_after in zip(weights_before, weights_after):
+                self.assertTrue(np.allclose(w_before, w_after))
+            
+            # Verify training can resume without errors
+            loss_after = new_training_model.train_step((x, y))
+            self.assertIsNotNone(loss_after)
+            self.assertIn('loss', loss_after)
+            self.assertFalse(tf.math.is_nan(loss_after['loss']))
+        
+        tf.config.run_functions_eagerly(False)
+
+
 if __name__ == '__main__':
     tf.test.main()
