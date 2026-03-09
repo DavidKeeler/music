@@ -8,7 +8,7 @@ import psutil
 from .config import (
     DATA_DIR, CACHE_DIR, CHECKPOINT_DIR,
     BATCH_SIZE, SEQ_LEN, LEARNING_RATE, NUM_EPOCHS,
-    INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS
+    INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS, MAX_CONTEXT_FRAMES
 )
 from .dataset import create_dataset
 from .model import MelGenerator
@@ -122,7 +122,8 @@ class MelGeneratorTraining(tf.keras.Model):
     def update_tf_ratio(self):
         """Update teacher forcing ratio based on current training step."""
         # Apply warmup: keep initial ratio until warmup_steps
-        step_after_warmup = tf.maximum(0, self.training_step - self.warmup_steps)
+        # Cast warmup_steps to int64 for type compatibility with training_step
+        step_after_warmup = tf.maximum(0, self.training_step - tf.cast(self.warmup_steps, tf.int64))
         
         # Compute new ratio using exponential schedule
         new_ratio = exponential_tf_schedule(
@@ -174,34 +175,69 @@ class MelGeneratorTraining(tf.keras.Model):
         # Shape validation
         tf.debugging.assert_equal(tf.shape(x), tf.shape(y))
         
+        # Short-circuit: if tf_ratio >= 1.0, use pure teacher forcing (parallel training)
+        if self.tf_ratio >= 1.0 - 1e-6:
+            with tf.GradientTape() as tape:
+                preds = self.base_model(x, training=True)
+                tf.debugging.assert_equal(tf.shape(preds), tf.shape(x))
+                loss = tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))
+                
+                tf.cond(
+                    tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
+                    lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),
+                    lambda: tf.constant(0)
+                )
+            
+            grads = tape.gradient(loss, self.base_model.trainable_variables)
+            grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
+            self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
+            self.tf_ratio_metric.update_state(self.tf_ratio)
+            
+            return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
+        
+        # Autoregressive training with scheduled sampling
+        batch_size = tf.shape(x)[0]
+        seq_len = tf.shape(y)[1]
+        mel_dim = tf.shape(y)[2]
+        
         with tf.GradientTape() as tape:
-            preds = self.base_model(x, training=True)
+            # Start with first frame only (like original implementation)
+            ar_input = x[:, :1, :]
+            preds = []
             
-            # Validate prediction shape
-            tf.debugging.assert_equal(tf.shape(preds), tf.shape(x))
+            # Generate autoregressively
+            for t in range(1, seq_len):
+                # Predict next frame - use last MAX_CONTEXT_FRAMES for efficiency
+                context = ar_input[:, -MAX_CONTEXT_FRAMES:, :]
+                pred = self.base_model(context, training=True)
+                next_frame_pred = pred[:, -1:, :]
+                
+                # Scheduled sampling: mix ground truth and prediction
+                use_teacher = tf.random.uniform([batch_size, 1, 1]) < self.tf_ratio
+                next_input = tf.where(use_teacher, x[:, t:t+1, :], next_frame_pred)
+                
+                # Store prediction for loss computation
+                preds.append(next_frame_pred)
+                
+                # Grow the input sequence (will be capped by context window in next iteration)
+                # Stop gradient: ar_input is just a container, doesn't need gradients
+                ar_input = tf.concat([ar_input, tf.stop_gradient(next_input)], axis=1)
             
-            # Loss: compare predictions at t with targets at t+1
-            loss = tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))
+            # Stack predictions
+            pred_seq = tf.concat(preds, axis=1)
             
-            # NaN detection (use tf.cond for graph compatibility)
-            def warn_nan():
-                tf.print("⚠️  WARNING: NaN/Inf loss detected!")
-                return tf.constant(0)
+            # Compute loss against ground truth (skip first frame)
+            loss = tf.reduce_mean(tf.abs(pred_seq - y[:, 1:, :]))
             
             tf.cond(
                 tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
-                warn_nan,
+                lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),
                 lambda: tf.constant(0)
             )
         
         grads = tape.gradient(loss, self.base_model.trainable_variables)
-        
-        # Compute gradient norm
         grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
-        
         self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
-        
-        # Update metric
         self.tf_ratio_metric.update_state(self.tf_ratio)
         
         return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
