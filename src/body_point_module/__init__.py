@@ -42,6 +42,12 @@ except ImportError:
     pass
 
 try:
+    from .encoder import build_mlp_encoder, build_pose_encoder
+    __all__.extend(['build_mlp_encoder', 'build_pose_encoder'])
+except ImportError:
+    pass
+
+try:
     from .module import BodyPointModule
     __all__.append('BodyPointModule')
 except ImportError:

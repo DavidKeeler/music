@@ -2,6 +2,14 @@
 
 ## Patterns
 
+### mem-1773123263-68ab
+> HistoryBuffer implemented: sliding window buffer with FIFO behavior. Maintains fixed-size buffer (8 frames) with left-padding when not full. add() appends features, get_tensor() returns [buffer_size, feature_dim] with zero-padding, reset() clears state. All 8 unit tests pass.
+<!-- tags: body-point, buffer, tensorflow | created: 2026-03-10 -->
+
+### mem-1773123154-3b1e
+> FeatureBuilder implemented: computes velocity from frame-to-frame keypoint differences. Builds [x,y,dx,dy,conf]×17 feature vectors (85 dims). Zero velocity for first frame, then tracks differences. Reset method clears state. All 8 unit tests pass.
+<!-- tags: body-point, features, tensorflow | created: 2026-03-10 -->
+
 ### mem-1773123020-9cc4
 > SkeletonNormalizer implemented: shoulder-width normalization using indices 5,6 for shoulders. Converts [1,1,17,3] keypoints to [17,2] normalized coords + [17] confidence. Midpoint maps to origin, shoulder distance normalized to 1.0. All 7 unit tests pass.
 <!-- tags: body-point, normalization, tensorflow | created: 2026-03-10 -->

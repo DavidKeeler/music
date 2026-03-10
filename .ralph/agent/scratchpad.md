@@ -60,5 +60,25 @@ Starting fresh - no existing body_point_module code.
 - All 7 unit tests pass (shapes, midpoint, distance, confidence)
 - Committed: 5c89677
 
+✅ **Step 4 Complete**: FeatureBuilder implemented
+- Created features.py with velocity computation
+- Computes velocity from frame-to-frame keypoint differences
+- Builds [x,y,dx,dy,conf]×17 feature vectors (85 dims)
+- Zero velocity for first frame, then tracks differences
+- Reset method clears previous keypoints
+- All 8 unit tests pass (zero velocity, velocity computation, layout, reset)
+- Integration test with PoseDetector + SkeletonNormalizer verified
+- Committed: 76c73c8
+
+✅ **Step 5 Complete**: HistoryBuffer implemented
+- Created buffer.py with sliding window buffer
+- FIFO behavior maintains fixed-size buffer (8 frames)
+- Left-padding with zeros when buffer not full
+- add() appends features, enforces size limit
+- get_tensor() returns [buffer_size, feature_dim] tensor
+- reset() clears buffer state
+- All 8 unit tests pass (FIFO, padding, reset, shape consistency)
+- Committed: 9b3568b
+
 ## Next Steps
-Continue with Step 4: Implement FeatureBuilder
+Continue with Step 6: Implement PoseEncoder
