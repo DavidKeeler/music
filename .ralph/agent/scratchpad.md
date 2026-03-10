@@ -44,5 +44,13 @@ Starting fresh - no existing body_point_module code.
 - Module imports successfully
 - Committed: 3a99afb
 
+✅ **Step 2 Complete**: PoseDetector wrapper implemented
+- Created pose_detector.py with MoveNet Thunder wrapper
+- Loads model from TF Hub (movenet/singlepose/thunder/4)
+- Handles frame resizing and padding to 256x256
+- Returns keypoints [1,1,17,3] format (y,x,confidence)
+- All 5 unit tests pass (shape, ranges, variable input sizes)
+- Committed: 8edec30
+
 ## Next Steps
-Continue with remaining implementation steps (2-8).
+Continue with Step 3: Implement SkeletonNormalizer

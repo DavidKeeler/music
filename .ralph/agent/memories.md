@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1773122901-ed7e
+> PoseDetector implemented: MoveNet Thunder wrapper loads from TF Hub, handles variable input sizes with resize_with_pad to 256x256, returns [1,1,17,3] keypoints (y,x,confidence). All values in [0,1] range. 5 unit tests pass.
+<!-- tags: body-point, movenet, tensorflow | created: 2026-03-10 -->
+
 ### mem-1773122748-1440
 > Body point module structure created: src/body_point_module/ with config.py defining EMBEDDING_DIM=128, BUFFER_SIZE=8, FEATURE_DIM=85 (17 joints × 5 features). Conditional import pattern for incremental development.
 <!-- tags: body-point, structure | created: 2026-03-10 -->

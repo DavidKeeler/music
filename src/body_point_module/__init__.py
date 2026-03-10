@@ -24,6 +24,12 @@ except ImportError:
     pass
 
 try:
+    from .normalizer import SkeletonNormalizer
+    __all__.append('SkeletonNormalizer')
+except ImportError:
+    pass
+
+try:
     from .module import BodyPointModule
     __all__.append('BodyPointModule')
 except ImportError:
