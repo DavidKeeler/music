@@ -2,6 +2,14 @@
 
 ## Patterns
 
+### mem-1773122043-3001
+> Parallel training benchmark: 1.37x overhead for 2-pass parallel sampling vs 1-pass pure TF. First pass (training=False) is cheaper than second pass (training=True), resulting in better than expected 2x overhead. Validates efficiency of parallel approach.
+<!-- tags: training, performance, benchmark | created: 2026-03-10 -->
+
+### mem-1773121343-afde
+> Parallel scheduled sampling refactor: Replaced O(T) autoregressive loop with 2-pass approach. Pass 1: get predictions (training=False), Pass 2: mix with ground truth and train. Reduces 255 forward passes to 2. Uses Python if/else instead of tf.cond for dispatch. Methods: _pure_teacher_forcing() and _parallel_scheduled_sampling().
+<!-- tags: training, tensorflow, performance | created: 2026-03-10 -->
+
 ### mem-1773015254-0815
 > Unit tests for train.py fixes: TestTypeCompatibility verifies no TypeError in update_tf_ratio() and warmup behavior. TestGradientFlow verifies gradients flow through preds list, loss values identical with/without stop_gradient, and memory efficiency. Uses SimpleMelGenerator mock. All 6 tests pass.
 <!-- tags: testing, teacher-forcing, tensorflow | created: 2026-03-09 -->
@@ -209,6 +217,14 @@
 ## Decisions
 
 ## Fixes
+
+### mem-1773122293-6bcd
+> Checkpoint compatibility: Old checkpoints (saved as full MelGeneratorTraining) incompatible with refactored wrapper due to structural changes. Model architecture (MelGenerator) unchanged. New checkpoints save/load correctly. Recommendation: retrain from scratch (50x+ faster). Format issue, not architecture issue.
+<!-- tags: checkpoint, training, compatibility | created: 2026-03-10 -->
+
+### mem-1773121523-59cd
+> Parallel training dispatch requires tf.cond not Python if: When using model.fit(), TensorFlow runs in graph mode where self.tf_ratio becomes a symbolic tensor. Python if statement causes OperatorNotAllowedInGraphError. Must use tf.cond(self.tf_ratio >= 0.99, lambda: pure_tf(), lambda: parallel()) for graph compatibility.
+<!-- tags: training, tensorflow, graph-mode | created: 2026-03-10 -->
 
 ### mem-1773116416-506b
 > Fixed OperatorNotAllowedInGraphError in train.py: replaced Python 'if self.tf_ratio >= 1.0' with tf.cond(). Extracted pure_teacher_forcing() and autoregressive_training() as nested functions. Both return identical structure {loss, grad_norm, tf_ratio}. tf.cond is required for symbolic tensors in graph mode.
