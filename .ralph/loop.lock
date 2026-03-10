@@ -1,5 +1,5 @@
 {
-  "pid": 26598,
-  "started": "2026-03-10T05:39:32.140681Z",
-  "prompt": "# Refactor Training Pipeline to Parallel Autoregressive Training\n\n## Objective\n\nRefactor `src/music..."
+  "pid": 28277,
+  "started": "2026-03-10T06:03:24.256145Z",
+  "prompt": "specs/body-point-module/PROMPT.md"
 }

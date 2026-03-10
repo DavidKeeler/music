@@ -16,7 +16,13 @@ __all__ = [
     'OUTPUT_MODE_WITH_KEYPOINTS',
 ]
 
-# Import BodyPointModule only when module.py exists
+# Import components as they are implemented
+try:
+    from .pose_detector import PoseDetector
+    __all__.append('PoseDetector')
+except ImportError:
+    pass
+
 try:
     from .module import BodyPointModule
     __all__.append('BodyPointModule')

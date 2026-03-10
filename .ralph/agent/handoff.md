@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-10 04:20:29 UTC_
+_Generated: 2026-03-10 05:59:31 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** d3ded16: chore: auto-commit before merge (loop primary)
+- **HEAD:** 706f80d: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -79,7 +79,15 @@ _Generated: 2026-03-10 04:20:29 UTC_
 - [x] Step 1: Add exponential_tf_schedule function
 - [x] Step 2: Update config with TF schedule params
 - [x] Step 3: Add TF ratio tracking to trainer
+- [x] Step 4: Implement memory-efficient autoregressive training step
+- [x] Step 5: Update training loop to use scheduled sampling
+- [x] Step 6: Add validation with pure autoregressive
+- [x] Step 7: Update checkpoint save/load for TF ratio
+- [x] Step 8: Add comprehensive tests for scheduled sampling
 - [x] Add MAX_CONTEXT_FRAMES config parameter
+- [x] Update train.py to use MAX_CONTEXT_FRAMES
+- [x] Create comprehensive test suite for teacher forcing
+- [x] Update README with MAX_CONTEXT_FRAMES documentation
 - [x] Fix type mismatch in update_tf_ratio() - line 125
 - [x] Fix memory leak in autoregressive loop - line 220
 - [x] Add unit tests for type compatibility
@@ -92,47 +100,43 @@ _Generated: 2026-03-10 04:20:29 UTC_
 - [x] Fix NaN/Inf detection type mismatch in pure_teacher_forcing()
 - [x] Fix NaN/Inf detection type mismatch in autoregressive_training()
 - [x] Test training runs without errors
+- [x] Refactor train.py: Extract pure teacher forcing and add parallel scheduled sampling
+- [x] Create test_parallel_training.py with unit tests
+- [x] Create benchmark_training.py to measure speedup
+- [x] Verify checkpoint compatibility
 
-### Remaining
-
-- [ ] Step 4: Implement memory-efficient autoregressive training step _(blocked by: task-1772945580-a91a)_
-- [ ] Step 5: Update training loop to use scheduled sampling _(blocked by: task-1772945583-7b9f)_
-- [ ] Step 6: Add validation with pure autoregressive _(blocked by: task-1772945586-05ce)_
-- [ ] Step 7: Update checkpoint save/load for TF ratio _(blocked by: task-1772945589-9358)_
-- [ ] Step 8: Add comprehensive tests for scheduled sampling _(blocked by: task-1772945592-5a01)_
-- [ ] Update train.py to use MAX_CONTEXT_FRAMES _(blocked by: task-1772998015-fca0)_
-- [ ] Create comprehensive test suite for teacher forcing _(blocked by: task-1772998018-9075)_
-- [ ] Update README with MAX_CONTEXT_FRAMES documentation _(blocked by: task-1772998021-370f)_
 
 ## Key Files
 
 Recently modified:
 
-- `.ralph/agent/handoff.md`
+- `.ralph/agent/acceptance-criteria-final.md`
+- `.ralph/agent/checkpoint-compatibility-assessment.md`
 - `.ralph/agent/memories.md`
 - `.ralph/agent/scratchpad.md`
 - `.ralph/agent/summary.md`
 - `.ralph/agent/tasks.jsonl`
-- `.ralph/current-events`
-- `.ralph/current-loop-id`
-- `.ralph/events-20260309-001049.jsonl`
-- `.ralph/events-20260310-040928.jsonl`
-- `.ralph/events-20260310-041732.jsonl`
+- `.ralph/events-20260310-053932.jsonl`
+- `.ralph/history.jsonl`
+- `scripts/benchmark_training.py`
+- `scripts/extract_base_model_weights.py`
 
 ## Next Session
 
-The following prompt can be used to continue where this session left off:
+Session completed successfully. No pending work.
+
+**Original objective:**
 
 ```
-Continue the previous work. Remaining tasks (8):
-- Step 4: Implement memory-efficient autoregressive training step
-- Step 5: Update training loop to use scheduled sampling
-- Step 6: Add validation with pure autoregressive
-- Step 7: Update checkpoint save/load for TF ratio
-- Step 8: Add comprehensive tests for scheduled sampling
-- Update train.py to use MAX_CONTEXT_FRAMES
-- Create comprehensive test suite for teacher forcing
-- Update README with MAX_CONTEXT_FRAMES documentation
+# Refactor Training Pipeline to Parallel Autoregressive Training
 
-Original objective: specs/debug-autoregressive-training/PROMPT.md
+## Objective
+
+Refactor `src/music_generation/train.py` to eliminate the O(T) autoregressive loop and replace it with parallel training using two-pass scheduled sampling. Achieve ~100x speedup while preserving exact autoregressive semantics and checkpoint compatibility.
+
+## Context
+
+- **Spec directory:** `specs/parallel-autoregressive-training/`
+- **Design:** See `design.md` for complete architecture and requirements
+- **Plan:** Se...
 ```

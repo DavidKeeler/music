@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1773122748-1440
+> Body point module structure created: src/body_point_module/ with config.py defining EMBEDDING_DIM=128, BUFFER_SIZE=8, FEATURE_DIM=85 (17 joints × 5 features). Conditional import pattern for incremental development.
+<!-- tags: body-point, structure | created: 2026-03-10 -->
+
 ### mem-1773122043-3001
 > Parallel training benchmark: 1.37x overhead for 2-pass parallel sampling vs 1-pass pure TF. First pass (training=False) is cheaper than second pass (training=True), resulting in better than expected 2x overhead. Validates efficiency of parallel approach.
 <!-- tags: training, performance, benchmark | created: 2026-03-10 -->
