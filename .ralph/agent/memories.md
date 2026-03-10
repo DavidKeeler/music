@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1773159091-b49f
+> BodyPointModule implemented: integrates PoseDetector, SkeletonNormalizer, FeatureBuilder, HistoryBuffer, PoseEncoder. Stateful interface with process_frame(), reset(), get_state(). Supports 3 output modes (embedding, with_confidence, with_keypoints). Fixed normalizer float32 cast and removed extra expand_dims. All 59 tests pass.
+<!-- tags: body-point, integration, tensorflow | created: 2026-03-10 -->
+
 ### mem-1773123378-6222
 > PoseEncoder implemented: MLP encoder (85→256→256→128) with LayerNorm and GELU. Temporal Conv1D (kernel=3, causal padding) aggregates frame embeddings. TimeDistributed MLP per-frame, extracts last timestep. ~120K trainable params. All 15 unit tests pass.
 <!-- tags: body-point, encoder, tensorflow | created: 2026-03-10 -->
