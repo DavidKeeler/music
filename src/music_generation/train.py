@@ -166,81 +166,56 @@ class MelGeneratorTraining(tf.keras.Model):
             warmup_steps=config.get("warmup_steps", TF_WARMUP_STEPS)
         )
     
+    def _pure_teacher_forcing(self, x, y):
+        """Single forward pass with ground truth."""
+        with tf.GradientTape() as tape:
+            preds = self.base_model(x, training=True)
+            loss = tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))
+        
+        grads = tape.gradient(loss, self.base_model.trainable_variables)
+        grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
+        self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
+        self.tf_ratio_metric.update_state(self.tf_ratio)
+        
+        return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
+    
+    def _parallel_scheduled_sampling(self, x, y):
+        """Two-pass parallel scheduled sampling."""
+        batch_size = tf.shape(x)[0]
+        seq_len = tf.shape(x)[1]
+        
+        # Pass 1: Get predictions (no gradients)
+        preds_pass1 = self.base_model(x, training=False)
+        
+        # Sample and mix
+        use_teacher = tf.random.uniform([batch_size, seq_len, 1]) < self.tf_ratio
+        preds_shifted = tf.concat([x[:, :1, :], preds_pass1[:, :-1, :]], axis=1)
+        mixed_input = tf.where(use_teacher, x, preds_shifted)
+        
+        # Pass 2: Train with mixed input
+        with tf.GradientTape() as tape:
+            preds_pass2 = self.base_model(mixed_input, training=True)
+            loss = tf.reduce_mean(tf.abs(preds_pass2[:, :-1, :] - y[:, 1:, :]))
+        
+        grads = tape.gradient(loss, self.base_model.trainable_variables)
+        grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
+        self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
+        self.tf_ratio_metric.update_state(self.tf_ratio)
+        
+        return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
+    
     def train_step(self, data):
-        # Update teacher forcing ratio at the start of each step
+        """Training step with parallel processing."""
         self.update_tf_ratio()
         
         x, y = data
-        
-        # Shape validation
         tf.debugging.assert_equal(tf.shape(x), tf.shape(y))
         
-        # Define pure teacher forcing path
-        def pure_teacher_forcing():
-            with tf.GradientTape() as tape:
-                preds = self.base_model(x, training=True)
-                tf.debugging.assert_equal(tf.shape(preds), tf.shape(x))
-                loss = tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))
-                
-                tf.print("Loss:", loss, "IsNaN:", tf.math.is_nan(loss), "IsInf:", tf.math.is_inf(loss))
-            
-            grads = tape.gradient(loss, self.base_model.trainable_variables)
-            grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
-            self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
-            self.tf_ratio_metric.update_state(self.tf_ratio)
-            
-            return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
-        
-        # Define autoregressive training path
-        def autoregressive_training():
-            batch_size = tf.shape(x)[0]
-            seq_len = tf.shape(y)[1]
-            mel_dim = tf.shape(y)[2]
-            
-            with tf.GradientTape() as tape:
-                # Start with first frame only (like original implementation)
-                ar_input = x[:, :1, :]
-                preds = []
-                
-                # Generate autoregressively
-                for t in range(1, seq_len):
-                    # Predict next frame - use last MAX_CONTEXT_FRAMES for efficiency
-                    context = ar_input[:, -MAX_CONTEXT_FRAMES:, :]
-                    pred = self.base_model(context, training=True)
-                    next_frame_pred = pred[:, -1:, :]
-                    
-                    # Scheduled sampling: mix ground truth and prediction
-                    use_teacher = tf.random.uniform([batch_size, 1, 1]) < self.tf_ratio
-                    next_input = tf.where(use_teacher, x[:, t:t+1, :], next_frame_pred)
-                    
-                    # Store prediction for loss computation
-                    preds.append(next_frame_pred)
-                    
-                    # Grow the input sequence (will be capped by context window in next iteration)
-                    # Stop gradient: ar_input is just a container, doesn't need gradients
-                    ar_input = tf.concat([ar_input, tf.stop_gradient(next_input)], axis=1)
-                
-                # Stack predictions
-                pred_seq = tf.concat(preds, axis=1)
-                
-                # Compute loss against ground truth (skip first frame)
-                loss = tf.reduce_mean(tf.abs(pred_seq - y[:, 1:, :]))
-                
-                tf.print("Loss:", loss, "IsNaN:", tf.math.is_nan(loss), "IsInf:", tf.math.is_inf(loss))
-            
-            grads = tape.gradient(loss, self.base_model.trainable_variables)
-            grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
-            self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
-            self.tf_ratio_metric.update_state(self.tf_ratio)
-            
-            return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
-        
-        # Use tf.cond to choose between paths based on tf_ratio
-        return tf.cond(
-            self.tf_ratio >= 1.0 - 1e-6,
-            pure_teacher_forcing,
-            autoregressive_training
-        )
+        # Choose training path
+        if self.tf_ratio >= 0.99:
+            return self._pure_teacher_forcing(x, y)
+        else:
+            return self._parallel_scheduled_sampling(x, y)
 
 
 def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE, 

@@ -1,65 +1,47 @@
-# Scratchpad: Fix Autoregressive Training Bug
+# Scratchpad: Parallel Autoregressive Training Refactor
 
-## Understanding
+## Current State Analysis
 
-The code already has `tf.cond` implemented for the main conditional (line 249-251), but there's a **type mismatch bug** in the NaN/Inf detection code that appears in BOTH nested functions:
+The current `train.py` has:
+1. ✅ Teacher forcing schedule tracking (tf_ratio, training_step)
+2. ✅ Pure teacher forcing path (single forward pass)
+3. ❌ O(T) autoregressive loop (255 iterations per batch)
+4. ✅ tf.cond dispatch between paths
 
-**Problem locations:**
-- Line 185 in `pure_teacher_forcing()`
-- Line 237 in `autoregressive_training()`
+## Objective
 
-**Current buggy code:**
-```python
-tf.cond(
-    tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
-    lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),  # Returns bool
-    lambda: tf.constant(0)  # Returns int32
-)
-```
+Replace the O(T) autoregressive loop with 2-pass parallel scheduled sampling:
+- Pass 1: Get predictions without gradients
+- Pass 2: Mix predictions with ground truth, train with gradients
+- Result: 255 forward passes → 2 forward passes (127x reduction)
 
-**Issue:** The two branches return different types (bool vs int32), causing `TypeError`.
+## Implementation Plan
 
-**Fix:** Replace with simple `tf.print` that always logs (no conditional needed):
-```python
-tf.print("Loss:", loss, "IsNaN:", tf.math.is_nan(loss), "IsInf:", tf.math.is_inf(loss))
-```
+The objective provides exact implementation code. I need to:
 
-This is simpler, always provides diagnostic info, and avoids the type mismatch entirely.
+1. **Extract pure teacher forcing to method** - Already exists as nested function, just move to class method
+2. **Add parallel scheduled sampling method** - New 2-pass implementation
+3. **Simplify train_step** - Replace tf.cond with simple if/else (Python control flow is fine)
+4. **Remove old code** - Delete nested functions and tf.cond
 
-## Plan
+## Key Insight
 
-1. Replace the problematic `tf.cond` NaN/Inf detection in `pure_teacher_forcing()` (line 184-188)
-2. Replace the problematic `tf.cond` NaN/Inf detection in `autoregressive_training()` (line 236-240)
-3. Test that training runs without errors
+The current code uses `tf.cond` which requires both branches to be graph-compatible. This was causing the OperatorNotAllowedInGraphError. The new approach uses simple Python `if` statement because:
+- We're checking a Python-accessible value (self.tf_ratio)
+- Only ONE branch executes per call
+- No need for symbolic control flow
 
-## Implementation Notes
+## Tasks to Create
 
-- Minimal change: just replace 5 lines with 1 line in each function
-- No logic changes, just fixing the type mismatch
-- The simple `tf.print` provides better diagnostics anyway (shows actual values)
+Based on the existing task list, I see tasks are already created but blocked. Let me check what's blocking them and if I need to create new tasks for this specific refactor.
 
----
+Looking at the objective, this is a COMPLETE REFACTOR that supersedes the incremental approach. I should:
+1. Close the old blocked tasks (they're for incremental approach)
+2. Create new tasks for the parallel refactor approach
+3. Implement the refactor
 
-## Iteration 1 - Completed
+## Next Steps
 
-### What I Did
-- Fixed both NaN/Inf detection issues in one commit
-- Replaced nested `tf.cond` with simple `tf.print` in both functions
-- Tested with dummy data - train_step executes successfully
-- Committed with descriptive message explaining the fix
-
-### Verification
-- Ran quick test with dummy data
-- Train step successful: loss=1.8498, grad_norm=1708.6211, tf_ratio=1.0000
-- No TypeError, no OperatorNotAllowedInGraphError
-- Loss diagnostics now print on every step
-
-### What I Learned
-- `tf.print` returns a bool, `tf.constant(0)` returns int32 - type mismatch
-- Simple unconditional logging is better than conditional warning
-- Always provides diagnostic info, easier to debug
-
-### Next Steps
-- All tasks closed
-- Objective complete - training should now run without errors
-
+1. Review existing tasks and close obsolete ones
+2. Create tasks for parallel refactor
+3. Implement first task

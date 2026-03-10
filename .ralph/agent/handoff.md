@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-10 04:12:01 UTC_
+_Generated: 2026-03-10 04:20:29 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** f2c6425: chore: auto-commit before merge (loop primary)
+- **HEAD:** d3ded16: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -89,6 +89,9 @@ _Generated: 2026-03-10 04:12:01 UTC_
 - [x] Extract autoregressive training logic into nested function
 - [x] Replace Python if with tf.cond
 - [x] Test training with fixed tf.cond implementation
+- [x] Fix NaN/Inf detection type mismatch in pure_teacher_forcing()
+- [x] Fix NaN/Inf detection type mismatch in autoregressive_training()
+- [x] Test training runs without errors
 
 ### Remaining
 
@@ -112,9 +115,9 @@ Recently modified:
 - `.ralph/agent/tasks.jsonl`
 - `.ralph/current-events`
 - `.ralph/current-loop-id`
-- `.ralph/events-20260308-045214.jsonl`
-- `.ralph/events-20260308-192627.jsonl`
 - `.ralph/events-20260309-001049.jsonl`
+- `.ralph/events-20260310-040928.jsonl`
+- `.ralph/events-20260310-041732.jsonl`
 
 ## Next Session
 

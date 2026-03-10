@@ -43,7 +43,7 @@ WINDOW_SIZES = [128, 256, 512]
 # Batch size for training (reduced to 4 for memory optimization)
 BATCH_SIZE = 4
 # Sequence length in frames (~6 seconds at 22.05kHz with 256 hop)
-SEQ_LEN = 512
+SEQ_LEN = 128
 # Initial learning rate (with warmup + cosine decay)
 LEARNING_RATE = 1e-4
 # Number of training epochs (reduced from 20 to 3 for faster iteration on CPU)
