@@ -211,11 +211,12 @@ class MelGeneratorTraining(tf.keras.Model):
         x, y = data
         tf.debugging.assert_equal(tf.shape(x), tf.shape(y))
         
-        # Choose training path
-        if self.tf_ratio >= 0.99:
-            return self._pure_teacher_forcing(x, y)
-        else:
-            return self._parallel_scheduled_sampling(x, y)
+        # Choose training path using tf.cond for graph mode compatibility
+        return tf.cond(
+            self.tf_ratio >= 0.99,
+            lambda: self._pure_teacher_forcing(x, y),
+            lambda: self._parallel_scheduled_sampling(x, y)
+        )
 
 
 def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE, 
