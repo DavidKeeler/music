@@ -182,11 +182,7 @@ class MelGeneratorTraining(tf.keras.Model):
                 tf.debugging.assert_equal(tf.shape(preds), tf.shape(x))
                 loss = tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))
                 
-                tf.cond(
-                    tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
-                    lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),
-                    lambda: tf.constant(0)
-                )
+                tf.print("Loss:", loss, "IsNaN:", tf.math.is_nan(loss), "IsInf:", tf.math.is_inf(loss))
             
             grads = tape.gradient(loss, self.base_model.trainable_variables)
             grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
@@ -230,11 +226,7 @@ class MelGeneratorTraining(tf.keras.Model):
                 # Compute loss against ground truth (skip first frame)
                 loss = tf.reduce_mean(tf.abs(pred_seq - y[:, 1:, :]))
                 
-                tf.cond(
-                    tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
-                    lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),
-                    lambda: tf.constant(0)
-                )
+                tf.print("Loss:", loss, "IsNaN:", tf.math.is_nan(loss), "IsInf:", tf.math.is_inf(loss))
             
             grads = tape.gradient(loss, self.base_model.trainable_variables)
             grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
