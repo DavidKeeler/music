@@ -259,6 +259,8 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
             tf.debugging.assert_equal(tf.shape(predictions), tf.shape(x), 
                                      message="Output shape must match input shape")
             print("✓ Model build verification passed")
+            # Build wrapper model too
+            _ = model(x, training=False)
         except Exception as e:
             print(f"✗ Model build verification failed: {e}")
             raise
@@ -269,14 +271,17 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE,
     
     if resume_from:
         print(f"Resuming from {resume_from}")
-        base_model.load_weights(resume_from)
+        model.load_weights(resume_from)
+    elif checkpoint_path.exists():
+        print(f"Auto-resuming from {checkpoint_path}")
+        model.load_weights(str(checkpoint_path))
     
     callbacks = [
-        tf.keras.callbacks.ModelCheckpoint(str(checkpoint_path), save_weights_only=False, save_best_only=True),
+        tf.keras.callbacks.ModelCheckpoint(str(checkpoint_path), save_weights_only=False, save_freq='epoch'),
         tf.keras.callbacks.TensorBoard(log_dir=checkpoint_dir / "logs"),
     ]
     
-    model.fit(dataset, epochs=epochs, steps_per_epoch=steps_per_epoch, callbacks=callbacks)
+    model.fit(dataset, epochs=epochs, callbacks=callbacks)
     
     # Validate checkpoint was saved
     print("Validating checkpoint...")

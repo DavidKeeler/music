@@ -80,5 +80,38 @@ Starting fresh - no existing body_point_module code.
 - All 8 unit tests pass (FIFO, padding, reset, shape consistency)
 - Committed: 9b3568b
 
+✅ **Step 6 Complete**: PoseEncoder implemented
+- Created encoder.py with build_mlp_encoder() and build_pose_encoder()
+- MLP: 85→256→256→128 with LayerNorm and GELU activation
+- Temporal modeling: Conv1D with kernel_size=3, causal padding
+- TimeDistributed MLP applied per-frame, extracts last timestep
+- ~120K trainable parameters
+- All 15 unit tests pass (shapes, trainability, temporal conv, gradient flow)
+- Integrated into __init__.py exports
+- Committed: 50beb23
+
 ## Next Steps
-Continue with Step 6: Implement PoseEncoder
+Continue with Step 7: Implement BodyPointModule
+
+
+## Step 7: Implementing BodyPointModule
+
+**Task**: Integrate all components into the main BodyPointModule class.
+
+**Components to integrate**:
+1. PoseDetector - MoveNet wrapper (✅ implemented)
+2. SkeletonNormalizer - Shoulder-width normalization (✅ implemented)
+3. FeatureBuilder - Velocity computation (✅ implemented)
+4. HistoryBuffer - Sliding window (✅ implemented)
+5. PoseEncoder - MLP + temporal conv (✅ implemented)
+
+**Implementation approach**:
+- Create module.py with BodyPointModule class
+- Initialize all components in __init__
+- Implement process_frame() for end-to-end pipeline
+- Support output_mode parameter (embedding, with_confidence, with_keypoints)
+- Implement reset() to clear state
+- Implement get_state() for debugging
+
+**Pipeline flow**:
+frame → PoseDetector → SkeletonNormalizer → FeatureBuilder → HistoryBuffer → PoseEncoder → embedding

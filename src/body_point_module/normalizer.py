@@ -27,6 +27,8 @@ class SkeletonNormalizer:
         
         # Convert to pixel coordinates
         height, width = image_shape
+        height = tf.cast(height, tf.float32)
+        width = tf.cast(width, tf.float32)
         y_pixels = kpts[:, 0] * height
         x_pixels = kpts[:, 1] * width
         confidence = kpts[:, 2]

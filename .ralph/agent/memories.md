@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1773123378-6222
+> PoseEncoder implemented: MLP encoder (85→256→256→128) with LayerNorm and GELU. Temporal Conv1D (kernel=3, causal padding) aggregates frame embeddings. TimeDistributed MLP per-frame, extracts last timestep. ~120K trainable params. All 15 unit tests pass.
+<!-- tags: body-point, encoder, tensorflow | created: 2026-03-10 -->
+
 ### mem-1773123263-68ab
 > HistoryBuffer implemented: sliding window buffer with FIFO behavior. Maintains fixed-size buffer (8 frames) with left-padding when not full. add() appends features, get_tensor() returns [buffer_size, feature_dim] with zero-padding, reset() clears state. All 8 unit tests pass.
 <!-- tags: body-point, buffer, tensorflow | created: 2026-03-10 -->
