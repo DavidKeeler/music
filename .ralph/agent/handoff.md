@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-08 04:03:49 UTC_
+_Generated: 2026-03-09 00:18:35 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** 8a5962d: chore: auto-commit before merge (loop primary)
+- **HEAD:** 0907c19: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -76,40 +76,61 @@ _Generated: 2026-03-08 04:03:49 UTC_
 - [x] Run single training step
 - [x] Monitor full training execution
 - [x] Verify vocoder initialization with fallback
+- [x] Step 1: Add exponential_tf_schedule function
+- [x] Step 2: Update config with TF schedule params
+- [x] Step 3: Add TF ratio tracking to trainer
+- [x] Add MAX_CONTEXT_FRAMES config parameter
+- [x] Fix type mismatch in update_tf_ratio() - line 125
+- [x] Fix memory leak in autoregressive loop - line 220
+- [x] Add unit tests for type compatibility
+- [x] Add unit tests for gradient flow
+- [x] Add integration tests for full training
 
+### Remaining
+
+- [ ] Step 4: Implement memory-efficient autoregressive training step _(blocked by: task-1772945580-a91a)_
+- [ ] Step 5: Update training loop to use scheduled sampling _(blocked by: task-1772945583-7b9f)_
+- [ ] Step 6: Add validation with pure autoregressive _(blocked by: task-1772945586-05ce)_
+- [ ] Step 7: Update checkpoint save/load for TF ratio _(blocked by: task-1772945589-9358)_
+- [ ] Step 8: Add comprehensive tests for scheduled sampling _(blocked by: task-1772945592-5a01)_
+- [ ] Update train.py to use MAX_CONTEXT_FRAMES _(blocked by: task-1772998015-fca0)_
+- [ ] Create comprehensive test suite for teacher forcing _(blocked by: task-1772998018-9075)_
+- [ ] Update README with MAX_CONTEXT_FRAMES documentation _(blocked by: task-1772998021-370f)_
 
 ## Key Files
 
 Recently modified:
 
-- `.ralph/agent/handoff.md`
 - `.ralph/agent/memories.md`
 - `.ralph/agent/scratchpad.md`
 - `.ralph/agent/summary.md`
 - `.ralph/agent/tasks.jsonl`
 - `.ralph/current-events`
 - `.ralph/current-loop-id`
-- `.ralph/events-20260308-025233.jsonl`
-- `.ralph/events-20260308-032313.jsonl`
+- `.ralph/events-20260308-045214.jsonl`
+- `.ralph/events-20260308-192627.jsonl`
+- `.ralph/events-20260309-001049.jsonl`
 - `.ralph/history.jsonl`
 
 ## Next Session
 
-Session completed successfully. No pending work.
-
-**Original objective:**
+The following prompt can be used to continue where this session left off:
 
 ```
-# Debug Vocoder Training
+Continue the previous work. Remaining tasks (8):
+- Step 4: Implement memory-efficient autoregressive training step
+- Step 5: Update training loop to use scheduled sampling
+- Step 6: Add validation with pure autoregressive
+- Step 7: Update checkpoint save/load for TF ratio
+- Step 8: Add comprehensive tests for scheduled sampling
+- Update train.py to use MAX_CONTEXT_FRAMES
+- Create comprehensive test suite for teacher forcing
+- Update README with MAX_CONTEXT_FRAMES documentation
+
+Original objective: # PROMPT: Fix Teacher Forcing Type Mismatch and Memory Issue
 
 ## Objective
 
-Fix and debug the vocoder training pipeline to run successfully end-to-end. The training script currently fails with missing dependencies and may have additional runtime issues.
-
-## Key Requirements
-
-- Install missing `huggingface_hub` dependency and update requirements.txt
-- Verify pretrained HiFiGAN model loads correctly on Metal GPU
-- Validate data pipeline with MusicNet dataset at `~/data/music/musicnet`
-- Execute single training step to catch runtime ...
+Fix two critical bugs in `src/music_generation/train.py` that prevent training from running:
+1. Type mismatch error (int64/i...
 ```

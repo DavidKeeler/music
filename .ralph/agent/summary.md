@@ -1,8 +1,8 @@
 # Loop Summary
 
 **Status:** Completed successfully
-**Iterations:** 3
-**Duration:** 7m 45s
+**Iterations:** 1
+**Duration:** 2m 32s
 
 ## Tasks
 
@@ -14,4 +14,4 @@ _No events recorded._
 
 ## Final Commit
 
-cce2ec3: Add integration tests for teacher forcing fixes
+6c89b8e: fix: replace Python if with tf.cond for graph compatibility

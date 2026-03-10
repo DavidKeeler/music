@@ -1,5 +1,5 @@
 {
-  "pid": 20221,
-  "started": "2026-03-09T00:10:49.779946Z",
-  "prompt": "# PROMPT: Fix Teacher Forcing Type Mismatch and Memory Issue\n\n## Objective\n\nFix two critical bugs i..."
+  "pid": 23726,
+  "started": "2026-03-10T04:09:28.701639Z",
+  "prompt": "specs/debug-autoregressive-training/PROMPT.md"
 }

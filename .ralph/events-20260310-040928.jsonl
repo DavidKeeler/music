@@ -1,0 +1,3 @@
+{"ts":"2026-03-10T04:09:28.708845+00:00","iteration":0,"hat":"loop","topic":"task.start","triggered":"planner","payload":"specs/debug-autoregressive-training/PROMPT.md"}
+{"payload":"Fixed OperatorNotAllowedInGraphError by replacing Python if with tf.cond. All tests pass. Training ready to run.","topic":"LOOP_COMPLETE","ts":"2026-03-10T04:11:55.846573+00:00"}
+{"ts":"2026-03-10T04:12:01.212264+00:00","iteration":1,"hat":"loop","topic":"loop.terminate","payload":"## Reason\ncompleted\n\n## Status\nAll tasks completed successfully.\n\n## Summary\n- Iterations: 1\n- Duration: 2m 32s\n- Exit code: 0"}

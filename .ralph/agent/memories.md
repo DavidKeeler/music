@@ -210,6 +210,10 @@
 
 ## Fixes
 
+### mem-1773115909-ae6f
+> Fixed OperatorNotAllowedInGraphError in train.py: replaced Python 'if self.tf_ratio >= 1.0' with tf.cond(). Extracted pure_teacher_forcing() and autoregressive_training() as nested functions. Both return identical structure {loss, grad_norm, tf_ratio}. tf.cond is required for symbolic tensors in graph mode.
+<!-- tags: tensorflow, training, graph-mode | created: 2026-03-10 -->
+
 ### mem-1773015504-2e95
 > Teacher forcing fixes complete: Fixed type mismatch (cast 0 and warmup_steps to int64) and memory leak (tf.stop_gradient on next_input). Added 8 comprehensive tests (3 type, 3 gradient, 2 integration). All tests pass. Memory reduced from 168 MB to 0.65 MB.
 <!-- tags: teacher-forcing, tensorflow, testing | created: 2026-03-09 -->
