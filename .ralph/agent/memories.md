@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1773123020-9cc4
+> SkeletonNormalizer implemented: shoulder-width normalization using indices 5,6 for shoulders. Converts [1,1,17,3] keypoints to [17,2] normalized coords + [17] confidence. Midpoint maps to origin, shoulder distance normalized to 1.0. All 7 unit tests pass.
+<!-- tags: body-point, normalization, tensorflow | created: 2026-03-10 -->
+
 ### mem-1773122901-ed7e
 > PoseDetector implemented: MoveNet Thunder wrapper loads from TF Hub, handles variable input sizes with resize_with_pad to 256x256, returns [1,1,17,3] keypoints (y,x,confidence). All values in [0,1] range. 5 unit tests pass.
 <!-- tags: body-point, movenet, tensorflow | created: 2026-03-10 -->

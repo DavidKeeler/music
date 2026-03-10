@@ -30,6 +30,12 @@ except ImportError:
     pass
 
 try:
+    from .features import FeatureBuilder
+    __all__.append('FeatureBuilder')
+except ImportError:
+    pass
+
+try:
     from .module import BodyPointModule
     __all__.append('BodyPointModule')
 except ImportError:

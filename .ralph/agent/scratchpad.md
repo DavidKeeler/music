@@ -52,5 +52,13 @@ Starting fresh - no existing body_point_module code.
 - All 5 unit tests pass (shape, ranges, variable input sizes)
 - Committed: 8edec30
 
+✅ **Step 3 Complete**: SkeletonNormalizer implemented
+- Created normalizer.py with shoulder-width normalization
+- Extracts shoulders (indices 5, 6), computes center and scale
+- Normalizes all 17 keypoints to body-relative coordinates
+- Returns [17, 2] normalized coords and [17] confidence scores
+- All 7 unit tests pass (shapes, midpoint, distance, confidence)
+- Committed: 5c89677
+
 ## Next Steps
-Continue with Step 3: Implement SkeletonNormalizer
+Continue with Step 4: Implement FeatureBuilder
