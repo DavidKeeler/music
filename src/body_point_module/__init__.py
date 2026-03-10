@@ -36,6 +36,12 @@ except ImportError:
     pass
 
 try:
+    from .buffer import HistoryBuffer
+    __all__.append('HistoryBuffer')
+except ImportError:
+    pass
+
+try:
     from .module import BodyPointModule
     __all__.append('BodyPointModule')
 except ImportError:
