@@ -2,7 +2,7 @@
 
 **Status:** Completed successfully
 **Iterations:** 1
-**Duration:** 2m 32s
+**Duration:** 2m 57s
 
 ## Tasks
 
@@ -14,4 +14,4 @@ _No events recorded._
 
 ## Final Commit
 
-6c89b8e: fix: replace Python if with tf.cond for graph compatibility
+f8852c6: fix: replace nested tf.cond with simple tf.print for NaN/Inf detection

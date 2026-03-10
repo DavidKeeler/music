@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-09 00:18:35 UTC_
+_Generated: 2026-03-10 04:12:01 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** 0907c19: chore: auto-commit before merge (loop primary)
+- **HEAD:** f2c6425: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -85,6 +85,10 @@ _Generated: 2026-03-09 00:18:35 UTC_
 - [x] Add unit tests for type compatibility
 - [x] Add unit tests for gradient flow
 - [x] Add integration tests for full training
+- [x] Extract pure teacher forcing logic into nested function
+- [x] Extract autoregressive training logic into nested function
+- [x] Replace Python if with tf.cond
+- [x] Test training with fixed tf.cond implementation
 
 ### Remaining
 
@@ -101,6 +105,7 @@ _Generated: 2026-03-09 00:18:35 UTC_
 
 Recently modified:
 
+- `.ralph/agent/handoff.md`
 - `.ralph/agent/memories.md`
 - `.ralph/agent/scratchpad.md`
 - `.ralph/agent/summary.md`
@@ -110,7 +115,6 @@ Recently modified:
 - `.ralph/events-20260308-045214.jsonl`
 - `.ralph/events-20260308-192627.jsonl`
 - `.ralph/events-20260309-001049.jsonl`
-- `.ralph/history.jsonl`
 
 ## Next Session
 
@@ -127,10 +131,5 @@ Continue the previous work. Remaining tasks (8):
 - Create comprehensive test suite for teacher forcing
 - Update README with MAX_CONTEXT_FRAMES documentation
 
-Original objective: # PROMPT: Fix Teacher Forcing Type Mismatch and Memory Issue
-
-## Objective
-
-Fix two critical bugs in `src/music_generation/train.py` that prevent training from running:
-1. Type mismatch error (int64/i...
+Original objective: specs/debug-autoregressive-training/PROMPT.md
 ```

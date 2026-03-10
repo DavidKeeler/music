@@ -210,6 +210,10 @@
 
 ## Fixes
 
+### mem-1773116416-506b
+> Fixed OperatorNotAllowedInGraphError in train.py: replaced Python 'if self.tf_ratio >= 1.0' with tf.cond(). Extracted pure_teacher_forcing() and autoregressive_training() as nested functions. Both return identical structure {loss, grad_norm, tf_ratio}. tf.cond is required for symbolic tensors in graph mode.
+<!-- tags: tensorflow, training, graph-mode | created: 2026-03-10 -->
+
 ### mem-1773115909-ae6f
 > Fixed OperatorNotAllowedInGraphError in train.py: replaced Python 'if self.tf_ratio >= 1.0' with tf.cond(). Extracted pure_teacher_forcing() and autoregressive_training() as nested functions. Both return identical structure {loss, grad_norm, tf_ratio}. tf.cond is required for symbolic tensors in graph mode.
 <!-- tags: tensorflow, training, graph-mode | created: 2026-03-10 -->

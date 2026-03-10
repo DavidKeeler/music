@@ -16,6 +16,8 @@
 **Implementation:**
 - Create nested function `pure_teacher_forcing()` inside `train_step()`
 - Move lines 180-195 (the teacher forcing branch) into this function
+- **Fix the NaN/Inf detection:** Remove the problematic nested `tf.cond` that has mismatched return types
+  - Replace with: `tf.print("Loss:", loss, "IsNaN:", tf.math.is_nan(loss), "IsInf:", tf.math.is_inf(loss))`
 - Ensure it returns `{"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}`
 - Keep all variable references intact (x, y, self.base_model, etc.)
 
@@ -25,10 +27,11 @@
 - Function should be callable without errors
 - Return structure matches expected dictionary format
 - All tensor operations remain graph-compatible
+- No TypeError about mismatched return types
 
 **Integration notes:**
 - Function is nested inside `train_step()` to access local variables (x, y)
-- No changes to the actual teacher forcing logic
+- NaN/Inf detection simplified to avoid type mismatch
 - Preserves existing gradient computation and metrics
 
 **Demo:**
@@ -47,6 +50,8 @@ assert "loss" in result and "grad_norm" in result and "tf_ratio" in result
 **Implementation:**
 - Create nested function `autoregressive_training()` inside `train_step()`
 - Move lines 197-246 (the autoregressive branch) into this function
+- **Fix the NaN/Inf detection:** Remove the problematic nested `tf.cond` that has mismatched return types
+  - Replace with: `tf.print("Loss:", loss, "IsNaN:", tf.math.is_nan(loss), "IsInf:", tf.math.is_inf(loss))`
 - Ensure it returns `{"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}`
 - Keep all variable references intact (x, y, self.base_model, batch_size, seq_len, etc.)
 
@@ -56,10 +61,11 @@ assert "loss" in result and "grad_norm" in result and "tf_ratio" in result
 - Function should be callable without errors
 - Return structure matches expected dictionary format (same as Step 1)
 - Autoregressive loop and scheduled sampling logic preserved
+- No TypeError about mismatched return types
 
 **Integration notes:**
 - Function is nested inside `train_step()` to access local variables
-- No changes to the actual autoregressive logic
+- NaN/Inf detection simplified to avoid type mismatch
 - Preserves existing gradient computation and metrics
 
 **Demo:**

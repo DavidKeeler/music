@@ -22,6 +22,7 @@ Replace Python `if` with `tf.cond` for graph-compatible conditional execution.
 - **Extract branches:** Create nested functions for each code path
 - **Use tf.cond:** Graph-compatible conditional that handles symbolic tensors
 - **Preserve logic:** No changes to teacher forcing or autoregressive algorithms
+- **Fix NaN/Inf detection:** Simplify nested `tf.cond` to avoid type mismatch errors
 
 ## Implementation Steps
 

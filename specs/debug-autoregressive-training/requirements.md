@@ -63,3 +63,26 @@ The bug is clear:
 
 Requirements clarification is complete.
 
+---
+
+## Post-Implementation Error
+
+After implementing the `tf.cond` fix, a second error appeared:
+
+**Error:** `TypeError: true_fn and false_fn arguments to tf.cond must have the same number, type, and overall structure of return values.`
+
+**Location:** Line 185 in `pure_teacher_forcing()` - the nested `tf.cond` for NaN/Inf detection
+
+**Problem:** 
+```python
+tf.cond(
+    tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
+    lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),  # Returns bool
+    lambda: tf.constant(0)  # Returns int32
+)
+```
+
+The true branch returns a bool (from `tf.print`) and false branch returns int32 (from `tf.constant(0)`). Both branches must return the same type.
+
+**Additional requirement:** Fix the NaN/Inf detection `tf.cond` in both `pure_teacher_forcing()` and `autoregressive_training()` functions to return consistent types.
+

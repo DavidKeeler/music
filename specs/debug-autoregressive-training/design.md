@@ -7,13 +7,21 @@ Fix the `OperatorNotAllowedInGraphError` in `train_step()` by replacing Python c
 ## Detailed Requirements
 
 ### Bug Description
-- **Error:** `OperatorNotAllowedInGraphError: Using a symbolic tf.Tensor as a Python bool is not allowed`
+- **Error 1:** `OperatorNotAllowedInGraphError: Using a symbolic tf.Tensor as a Python bool is not allowed`
 - **Location:** `src/music_generation/train.py`, line 179 in `MelGeneratorTraining.train_step()`
 - **Root cause:** `self.tf_ratio` is a `tf.Variable` (symbolic tensor) used in Python `if` statement during graph execution
+
+### Bug 2 (Post-Implementation)
+- **Error 2:** `TypeError: true_fn and false_fn arguments to tf.cond must have the same number, type, and overall structure of return values.`
+- **Location:** Line 185 in `pure_teacher_forcing()` (and similar in `autoregressive_training()`)
+- **Root cause:** NaN/Inf detection `tf.cond` has mismatched return types:
+  - True branch: `lambda: tf.print(...)` returns bool
+  - False branch: `lambda: tf.constant(0)` returns int32
 
 ### Expected Behavior
 - When `tf_ratio >= 1.0 - 1e-6`: Use pure teacher forcing (parallel training, memory efficient)
 - When `tf_ratio < 1.0 - 1e-6`: Use autoregressive training with scheduled sampling
+- NaN/Inf detection should work without type errors
 
 ### Constraints
 - Minimal code changes
@@ -101,19 +109,45 @@ No data model changes required. The fix is purely control flow.
 
 ## Error Handling
 
-### Existing Error Handling (preserved)
+### Existing Error Handling (needs fixing)
+
+**Current problematic code:**
 ```python
 tf.cond(
     tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
-    lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),
-    lambda: tf.constant(0)
+    lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),  # Returns bool
+    lambda: tf.constant(0)  # Returns int32
 )
 ```
 
-This pattern already uses `tf.cond` correctly and will remain unchanged in both branches.
+**Problem:** Mismatched return types between branches cause `TypeError`.
+
+**Fixed code:**
+```python
+tf.cond(
+    tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
+    lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!", output_stream=sys.stderr),
+    lambda: tf.no_op()
+)
+```
+
+**Alternative (if tf.no_op() doesn't work):**
+```python
+# Option 1: Make both return None by discarding tf.print result
+_ = tf.cond(
+    tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
+    lambda: (tf.print("⚠️  WARNING: NaN/Inf loss detected!"), None)[1],
+    lambda: None
+)
+
+# Option 2: Remove the tf.cond entirely (simplest)
+tf.print("Loss:", loss, "IsNaN:", tf.math.is_nan(loss), "IsInf:", tf.math.is_inf(loss))
+```
+
+**Recommended:** Option 2 (remove the conditional) - simplest and always logs the loss state.
 
 ### New Error Handling
-None required - the fix resolves the error by using proper TensorFlow control flow.
+This fix must be applied in both `pure_teacher_forcing()` and `autoregressive_training()` functions.
 
 ## Acceptance Criteria
 
