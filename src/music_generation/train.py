@@ -175,8 +175,8 @@ class MelGeneratorTraining(tf.keras.Model):
         # Shape validation
         tf.debugging.assert_equal(tf.shape(x), tf.shape(y))
         
-        # Short-circuit: if tf_ratio >= 1.0, use pure teacher forcing (parallel training)
-        if self.tf_ratio >= 1.0 - 1e-6:
+        # Define pure teacher forcing path
+        def pure_teacher_forcing():
             with tf.GradientTape() as tape:
                 preds = self.base_model(x, training=True)
                 tf.debugging.assert_equal(tf.shape(preds), tf.shape(x))
@@ -195,52 +195,60 @@ class MelGeneratorTraining(tf.keras.Model):
             
             return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
         
-        # Autoregressive training with scheduled sampling
-        batch_size = tf.shape(x)[0]
-        seq_len = tf.shape(y)[1]
-        mel_dim = tf.shape(y)[2]
-        
-        with tf.GradientTape() as tape:
-            # Start with first frame only (like original implementation)
-            ar_input = x[:, :1, :]
-            preds = []
+        # Define autoregressive training path
+        def autoregressive_training():
+            batch_size = tf.shape(x)[0]
+            seq_len = tf.shape(y)[1]
+            mel_dim = tf.shape(y)[2]
             
-            # Generate autoregressively
-            for t in range(1, seq_len):
-                # Predict next frame - use last MAX_CONTEXT_FRAMES for efficiency
-                context = ar_input[:, -MAX_CONTEXT_FRAMES:, :]
-                pred = self.base_model(context, training=True)
-                next_frame_pred = pred[:, -1:, :]
+            with tf.GradientTape() as tape:
+                # Start with first frame only (like original implementation)
+                ar_input = x[:, :1, :]
+                preds = []
                 
-                # Scheduled sampling: mix ground truth and prediction
-                use_teacher = tf.random.uniform([batch_size, 1, 1]) < self.tf_ratio
-                next_input = tf.where(use_teacher, x[:, t:t+1, :], next_frame_pred)
+                # Generate autoregressively
+                for t in range(1, seq_len):
+                    # Predict next frame - use last MAX_CONTEXT_FRAMES for efficiency
+                    context = ar_input[:, -MAX_CONTEXT_FRAMES:, :]
+                    pred = self.base_model(context, training=True)
+                    next_frame_pred = pred[:, -1:, :]
+                    
+                    # Scheduled sampling: mix ground truth and prediction
+                    use_teacher = tf.random.uniform([batch_size, 1, 1]) < self.tf_ratio
+                    next_input = tf.where(use_teacher, x[:, t:t+1, :], next_frame_pred)
+                    
+                    # Store prediction for loss computation
+                    preds.append(next_frame_pred)
+                    
+                    # Grow the input sequence (will be capped by context window in next iteration)
+                    # Stop gradient: ar_input is just a container, doesn't need gradients
+                    ar_input = tf.concat([ar_input, tf.stop_gradient(next_input)], axis=1)
                 
-                # Store prediction for loss computation
-                preds.append(next_frame_pred)
+                # Stack predictions
+                pred_seq = tf.concat(preds, axis=1)
                 
-                # Grow the input sequence (will be capped by context window in next iteration)
-                # Stop gradient: ar_input is just a container, doesn't need gradients
-                ar_input = tf.concat([ar_input, tf.stop_gradient(next_input)], axis=1)
+                # Compute loss against ground truth (skip first frame)
+                loss = tf.reduce_mean(tf.abs(pred_seq - y[:, 1:, :]))
+                
+                tf.cond(
+                    tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
+                    lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),
+                    lambda: tf.constant(0)
+                )
             
-            # Stack predictions
-            pred_seq = tf.concat(preds, axis=1)
+            grads = tape.gradient(loss, self.base_model.trainable_variables)
+            grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
+            self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
+            self.tf_ratio_metric.update_state(self.tf_ratio)
             
-            # Compute loss against ground truth (skip first frame)
-            loss = tf.reduce_mean(tf.abs(pred_seq - y[:, 1:, :]))
-            
-            tf.cond(
-                tf.math.logical_or(tf.math.is_nan(loss), tf.math.is_inf(loss)),
-                lambda: tf.print("⚠️  WARNING: NaN/Inf loss detected!"),
-                lambda: tf.constant(0)
-            )
+            return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
         
-        grads = tape.gradient(loss, self.base_model.trainable_variables)
-        grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
-        self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
-        self.tf_ratio_metric.update_state(self.tf_ratio)
-        
-        return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
+        # Use tf.cond to choose between paths based on tf_ratio
+        return tf.cond(
+            self.tf_ratio >= 1.0 - 1e-6,
+            pure_teacher_forcing,
+            autoregressive_training
+        )
 
 
 def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE, 
