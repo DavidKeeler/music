@@ -49,6 +49,15 @@ LEARNING_RATE = 1e-4
 # Number of training epochs (reduced from 20 to 3 for faster iteration on CPU)
 NUM_EPOCHS = 3
 
+# Reduction Factor for Multi-Frame Prediction
+# R=1: predict single frame (original behavior)
+# R=4: predict 4 frames per step (4x speedup, default)
+REDUCTION_FACTOR = 4
+# Effective sequence length after grouping frames
+EFFECTIVE_SEQ_LEN = SEQ_LEN // REDUCTION_FACTOR  # 512 // 4 = 128
+# Grouped mel dimension (R frames concatenated)
+GROUPED_MEL_DIM = N_MELS * REDUCTION_FACTOR  # 80 * 4 = 320
+
 # Teacher Forcing Schedule Parameters
 # Initial teacher forcing ratio (1.0 = always use ground truth)
 INITIAL_TF_RATIO = 1.0
