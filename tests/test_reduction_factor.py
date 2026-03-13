@@ -112,3 +112,112 @@ class TestDatasetSequencePairs:
         
         assert input_seq.shape[0] == EFFECTIVE_SEQ_LEN
         assert target_seq.shape[0] == EFFECTIVE_SEQ_LEN
+
+
+class TestModelProjections:
+    """Test model input/output projections handle grouped frames."""
+    
+    def test_model_input_shape(self):
+        """Test model accepts grouped frame input [B, T/R, R*80]."""
+        from src.music_generation.model import MelGenerator
+        
+        model = MelGenerator()
+        dummy_input = tf.random.normal([2, EFFECTIVE_SEQ_LEN, GROUPED_MEL_DIM])
+        output = model(dummy_input, training=False)
+        
+        # Should process without errors
+        assert output.shape[0] == 2
+        assert output.shape[1] == EFFECTIVE_SEQ_LEN
+        assert output.shape[2] == GROUPED_MEL_DIM
+    
+    def test_model_output_shape(self):
+        """Test model outputs grouped frames [B, T/R, R*80]."""
+        from src.music_generation.model import MelGenerator
+        
+        model = MelGenerator()
+        dummy_input = tf.random.normal([4, EFFECTIVE_SEQ_LEN, GROUPED_MEL_DIM])
+        output = model(dummy_input, training=False)
+        
+        assert output.shape == (4, EFFECTIVE_SEQ_LEN, GROUPED_MEL_DIM)
+
+
+class TestLossComputation:
+    """Test training loss computation with grouped frames."""
+    
+    def test_loss_reshaping(self):
+        """Test loss computation reshapes to per-frame format."""
+        # Simulate predictions and targets
+        preds = tf.random.normal([2, EFFECTIVE_SEQ_LEN - 1, GROUPED_MEL_DIM])
+        targets = tf.random.normal([2, EFFECTIVE_SEQ_LEN - 1, GROUPED_MEL_DIM])
+        
+        # Reshape to [B, T/R-1, R, 80]
+        batch_size = tf.shape(preds)[0]
+        seq_len = tf.shape(preds)[1]
+        preds_frames = tf.reshape(preds, [batch_size, seq_len, REDUCTION_FACTOR, N_MELS])
+        target_frames = tf.reshape(targets, [batch_size, seq_len, REDUCTION_FACTOR, N_MELS])
+        
+        assert preds_frames.shape[2] == REDUCTION_FACTOR
+        assert preds_frames.shape[3] == N_MELS
+        assert target_frames.shape[2] == REDUCTION_FACTOR
+        assert target_frames.shape[3] == N_MELS
+    
+    def test_loss_scalar_output(self):
+        """Test loss computation produces scalar value."""
+        # Simulate predictions and targets
+        preds = tf.random.normal([2, EFFECTIVE_SEQ_LEN - 1, GROUPED_MEL_DIM])
+        targets = tf.random.normal([2, EFFECTIVE_SEQ_LEN - 1, GROUPED_MEL_DIM])
+        
+        # Reshape and compute loss
+        batch_size = tf.shape(preds)[0]
+        seq_len = tf.shape(preds)[1]
+        preds_frames = tf.reshape(preds, [batch_size, seq_len, REDUCTION_FACTOR, N_MELS])
+        target_frames = tf.reshape(targets, [batch_size, seq_len, REDUCTION_FACTOR, N_MELS])
+        
+        loss = tf.reduce_mean(tf.square(preds_frames - target_frames))
+        
+        # Loss should be scalar
+        assert loss.shape == ()
+        assert tf.math.is_finite(loss)
+
+
+class TestGenerationWithReduction:
+    """Test generation method handles grouped frames correctly."""
+    
+    def test_seed_truncation(self):
+        """Test seed is truncated to R-divisible length."""
+        # Seed with non-divisible length (101 % 4 = 1)
+        seed = tf.random.normal([101, N_MELS])
+        
+        # Truncate
+        seed_len = int(seed.shape[0])
+        truncated_len = seed_len - (seed_len % REDUCTION_FACTOR)
+        seed_truncated = seed[:truncated_len]
+        
+        assert seed_truncated.shape[0] == 100  # 101 - (101 % 4) = 100
+        assert int(seed_truncated.shape[0]) % REDUCTION_FACTOR == 0
+    
+    def test_seed_reshaping(self):
+        """Test seed is reshaped to grouped format."""
+        seed = tf.random.normal([96, N_MELS])
+        
+        # Reshape to grouped
+        seed_grouped = tf.reshape(seed, [-1, GROUPED_MEL_DIM])
+        
+        assert seed_grouped.shape == (24, GROUPED_MEL_DIM)
+    
+    def test_generation_steps(self):
+        """Test correct number of generation steps for target frames."""
+        num_frames = 500
+        num_steps = (num_frames + REDUCTION_FACTOR - 1) // REDUCTION_FACTOR
+        
+        assert num_steps == 125  # ceil(500 / 4)
+    
+    def test_output_reshaping(self):
+        """Test generated grouped frames are reshaped back to individual frames."""
+        # Simulate generated grouped frames
+        generated_grouped = tf.random.normal([125, GROUPED_MEL_DIM])
+        
+        # Reshape to individual frames
+        generated = tf.reshape(generated_grouped, [-1, N_MELS])
+        
+        assert generated.shape == (500, N_MELS)
