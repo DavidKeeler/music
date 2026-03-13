@@ -36,8 +36,9 @@ D_MODEL = 128
 NUM_HEADS = 4
 # Number of transformer layers
 NUM_LAYERS = 3
-# Local attention window sizes per layer
-WINDOW_SIZES = [128, 256, 512]
+# Local attention window sizes per layer (adjusted for REDUCTION_FACTOR=4)
+# Effective sequence length = SEQ_LEN / REDUCTION_FACTOR = 512 / 4 = 128
+WINDOW_SIZES = [32, 64, 128]
 
 # Dilated Convolution Configuration
 # Dilation rates for conv1, conv2, conv_head layers

@@ -1,265 +1,98 @@
-# Scratchpad: Mel Frame Reduction Factor Implementation
+# Scratchpad - Dilated Causal Convolutions
 
-## Objective
-Implement a reduction factor (R=4) for the mel spectrogram generator to predict multiple consecutive frames per autoregressive step, reducing sequence length 4x and improving training efficiency.
+## Current Understanding
 
-## Understanding
+Implementing dilated causal convolutions to increase temporal receptive field from ~58ms to ~174ms.
 
-The goal is to modify the music generation system to predict 4 mel frames at once instead of 1 frame per step. This will:
-- Reduce effective sequence length from 512 to 128 (4x speedup)
-- Reduce attention complexity from O(512²) to O(128²) = 16x improvement
-- Maintain causal structure and model quality
+**Status:**
+- ✅ Config added: CONV_DILATION_RATES = [1, 2, 4] in config.py
+- ✅ Imports added: CONV_DILATION_RATES, FRAME_STEP, SAMPLE_RATE in model.py
+- ✅ MelGenerator.__init__() modified with dilation logic (commit 78b0954)
+- ⏳ Need to create comprehensive test suite
 
-Key insight: External APIs (inference) still work with individual frames [T, 80], but internally the model operates on grouped frames [T/R, R*80].
+**Completed:** Modified MelGenerator.__init__() with dilation logic (task-1773380825-2080)
 
-## Implementation Plan
+Implementation includes:
+1. ✅ Extract dilation rates with padding/truncation for 3 conv layers
+2. ✅ Log warnings for list length mismatches
+3. ✅ Calculate and log receptive field at initialization
+4. ✅ Pass dilation_rate parameter to CausalConvBlock constructors
 
-Following the 7-step incremental plan from specs/mel-frame-reduction-factor/plan.md:
+Verified:
+- Model initializes successfully
+- Logs show: "MelGenerator initialized with dilation rates [1, 2, 4]"
+- Logs show: "Total receptive field: 15 frames (~174.1 ms)"
+- All 4 existing model tests pass
 
-1. **Config**: Add REDUCTION_FACTOR=4, GROUPED_MEL_DIM=320, EFFECTIVE_SEQ_LEN=128
-2. **Dataset**: Truncate to R-divisible length, reshape [T,80] → [T/R, R*80]
-3. **Model I/O**: Update input/output projections to handle GROUPED_MEL_DIM
-4. **Generation**: Handle grouped frame prediction and reshaping
-5. **Training**: Compute per-frame loss and average across R frames
-6. **Tests**: Unit tests for all shape transformations
-7. **E2E Verification**: Run training and inference to validate
+**Completed:** Create test file structure (task-1773380828-cfc1)
 
-## Current Status
-✓ Step 1 complete: Config changes committed (4009dee)
-✓ Step 2 complete: Dataset preprocessing committed (690828b)
+Created tests/test_dilated_convolutions.py with:
+- TestReceptiveFieldCalculation: 2 test stubs for RF formula
+- TestModelInitialization: 4 test stubs for various configs (default, custom, too short, too long)
+- TestIntegration: 4 test stubs for forward pass, causality, generation
+- Total: 10 test methods ready for implementation
 
-**Step 2 Summary:**
-- Modified dataset.py to truncate and reshape mel sequences
-- Truncation: mel_length → (mel_length // R) * R to ensure divisibility
-- Reshape: [T, 80] → [T/R, 320] for grouped frame processing
-- Updated all sequence length checks to use EFFECTIVE_SEQ_LEN (128)
-- Updated stride calculation for grouped frames
-- Created 11 unit tests covering all transformations
-- Verified end-to-end with real MusicNet data: [2, 128, 320] ✓
+**Next Task:** Implement receptive field calculation tests (task-1773380832-e56d)
 
-**Key Implementation Details:**
-- Truncation happens before reshaping to avoid dimension errors
-- Normalization applied before reshaping (preserves per-frame statistics)
-- Input/target pairs use 1-step offset on grouped sequences
-- Dataset API unchanged: still returns (input, target) batches
+**Key Formula:**
+- Receptive field: RF = 1 + 2 * sum(dilations)
+- Frame duration: FRAME_STEP / SAMPLE_RATE * 1000 ms
+- Expected: 15 frames (~174ms) with [1, 2, 4]
 
-## Next Steps
-1. Step 3: Modify model input/output projections to handle GROUPED_MEL_DIM
+**Completed:** Implement receptive field calculation tests (task-1773380832-e56d)
 
+Implemented 2 tests in TestReceptiveFieldCalculation:
+1. test_rf_formula_default: Verifies RF = 15 with default [1,2,4] dilations
+2. test_rf_formula_custom: Verifies formula with [1,1,1] (RF=7) and [2,4,8] (RF=29)
 
-## Step 3 Complete: Model I/O Projections Updated (beb0bcc)
-
-Successfully modified MelGenerator to handle grouped frames with R=4 reduction factor.
+Both tests pass. Formula validated: RF = 1 + 2 * sum(dilations)
 
-**Changes Made:**
-1. Updated input projection: `Dense(N_MELS)` → `Dense(GROUPED_MEL_DIM)` (80 → 320)
-2. Updated output projection: `Dense(N_MELS)` → `Dense(GROUPED_MEL_DIM)` (80 → 320)
-3. Modified `generate()` method for grouped frame prediction:
-   - Truncates seed to R-divisible length (handles edge cases)
-   - Reshapes seed: `[T, 80]` → `[T/R, 320]` for internal processing
-   - Generates in steps of R frames: `num_steps = (num_frames + R - 1) // R`
-   - Reshapes output back: `[num_steps, 320]` → `[num_steps*R, 80]`
-   - Truncates to exact `num_frames` requested
-4. Updated all model tests to use `GROUPED_MEL_DIM` and `EFFECTIVE_SEQ_LEN`
+**Next:** Implement model initialization tests (task-1773380837-dc90) - now unblocked
 
-**Test Results:**
-- ✓ All model tests pass (4/4)
-- ✓ All reduction factor tests pass (11/11)
-- ✓ Model correctly processes grouped frames `[B, T/R, 320]`
-- ✓ Generate method maintains API compatibility with individual frames
+**Completed:** Implement model initialization tests (task-1773380837-dc90)
 
-**Key Design Decisions:**
-- External API unchanged: `generate()` still accepts/returns `[T, 80]` individual frames
-- Internal operations use grouped frames `[T/R, 320]` for efficiency
-- Seed truncation handles non-divisible lengths gracefully
-- Context window now uses `EFFECTIVE_SEQ_LEN` (128) instead of `SEQ_LEN` (512)
+Implemented 4 tests in TestModelInitialization:
+1. test_initialization_default: Verifies model creates with default [1,2,4] dilations and has conv1, conv2, conv_head attributes
+2. test_initialization_custom: Verifies model accepts custom dilation rates [2,4,8] via monkeypatch
+3. test_dilation_list_too_short: Verifies warning logged when list has <3 elements (e.g., [1,2])
+4. test_dilation_list_too_long: Verifies warning logged when list has >3 elements (e.g., [1,2,4,8,16])
 
-**Next Steps:**
-Step 4 will update the model generation method (already done in this step), so we can move to Step 5: modify training loss computation to handle grouped frames.
+Key implementation details:
+- Used monkeypatch to inject CONV_DILATION_RATES into model module (not config module, since model imports at module level)
+- Used caplog.set_level(logging.WARNING) to capture logging output
+- All 4 tests pass, bringing total to 6/10 tests implemented (2 RF + 4 init)
 
+**Next:** Implement integration tests (task-1773380840-ac5b) - now unblocked
 
-## Step 4 Complete: Generation Method Already Updated
-
-Step 4 (update model generation method) was completed as part of Step 3 since the I/O projections and generation logic are tightly coupled. The `generate()` method now:
-- Handles grouped frame prediction (R frames per step)
-- Truncates seed to R-divisible length
-- Reshapes seed and output between individual and grouped frames
-- Maintains API compatibility with external callers
+**Completed:** Implement integration tests (task-1773380840-ac5b)
 
-No additional work needed for Step 4.
+Implemented 4 integration tests in TestIntegration:
+1. test_output_shape_unchanged: Verifies model I/O shape consistency with GROUPED_MEL_DIM (320)
+2. test_causality_preserved: Verifies causal attention by comparing full vs truncated sequences
+3. test_forward_pass_no_errors: Verifies forward pass produces valid outputs (no NaN/Inf)
+4. test_generation_works: Verifies autoregressive generation with seed [T,80] -> output [num_frames,80]
 
+Key learnings:
+- Model now uses GROUPED_MEL_DIM (320) for I/O due to reduction factor R=4
+- generate() expects [T, N_MELS] without batch dimension
+- All 10 tests pass (2 RF + 4 init + 4 integration)
 
-## Step 5: Training Loss Computation
+**Next Task:** Run test suite and verify all pass (task-1773380843-7422) - now unblocked
 
-**Task:** Modify `train_step()` to compute per-frame loss and average across R frames.
 
-**Current State:**
-- Loss computed on grouped frames: `[B, T/R, 320]`
-- Uses MAE: `tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))`
-- Applied in both `_pure_teacher_forcing()` and `_parallel_scheduled_sampling()`
+**Completed:** Run test suite and verify all pass (task-1773380843-7422)
 
-**Required Changes:**
-1. Reshape predictions: `[B, T/R, 320] → [B, T/R, 4, 80]`
-2. Reshape targets: `[B, T/R, 320] → [B, T/R, 4, 80]`
-3. Compute per-frame loss: MSE per frame → `[B, T/R, 4]`
-4. Average across all dimensions: scalar loss
-
-**Implementation Plan:**
-- Update both training methods with identical loss computation
-- Add inline comments explaining reshaping logic
-- Maintain existing teacher forcing schedule logic
-- Use MSE instead of MAE for per-frame loss (as specified in plan)
-
-
-## Step 5 Complete: Training Loss Computation (22fc63d)
-
-Successfully modified training loss computation to handle grouped frames with per-frame loss averaging.
-
-**Changes Made:**
-1. Updated `_pure_teacher_forcing()`:
-   - Reshape predictions: `[B, T/R-1, R*80] → [B, T/R-1, R, 80]`
-   - Reshape targets: `[B, T/R-1, R*80] → [B, T/R-1, R, 80]`
-   - Compute MSE per frame: `tf.square(preds_frames - target_frames)`
-   - Average across all dimensions: `tf.reduce_mean()`
-
-2. Updated `_parallel_scheduled_sampling()`:
-   - Same reshaping and loss computation logic
-   - Applied to Pass 2 (training pass with mixed input)
-
-3. Updated test infrastructure:
-   - `SimpleMelGenerator` now uses `GROUPED_MEL_DIM` (320) instead of 80
-   - All test data updated to use `GROUPED_MEL_DIM`
-   - Added `GROUPED_MEL_DIM` to test imports
-
-**Test Results:**
-- ✓ All training tests pass (8/8)
-- ✓ All reduction factor tests pass (11/11)
-- ✓ All model tests pass (4/4)
-- ✓ Loss computation correctly handles grouped frames
-- ✓ Gradients flow correctly through reshaped tensors
-
-**Key Implementation Details:**
-- Loss changed from MAE to MSE (as specified in plan)
-- Reshaping uses dynamic batch_size and seq_len from tf.shape()
-- Both training methods use identical loss computation
-- Teacher forcing schedule logic unchanged
-- Inline comments explain reshaping rationale
-
-**Next Steps:**
-Step 6: Add unit tests for reduction factor (already exists - tests/test_reduction_factor.py with 11 tests)
-Step 7: Verify end-to-end training and inference
-
-
-## Step 6 Complete: Comprehensive Unit Tests (3cd8dc6)
-
-Successfully added comprehensive unit tests for all reduction factor components.
-
-**Changes Made:**
-1. Added TestModelProjections (2 tests):
-   - test_model_input_shape: Verify model accepts grouped frames [B, T/R, R*80]
-   - test_model_output_shape: Verify model outputs grouped frames [B, T/R, R*80]
-
-2. Added TestLossComputation (2 tests):
-   - test_loss_reshaping: Verify loss reshapes to [B, T/R-1, R, 80] format
-   - test_loss_scalar_output: Verify loss produces scalar value
-
-3. Added TestGenerationWithReduction (4 tests):
-   - test_seed_truncation: Verify seed truncated to R-divisible length
-   - test_seed_reshaping: Verify seed reshaped to grouped format
-   - test_generation_steps: Verify correct number of steps (ceil(frames/R))
-   - test_output_reshaping: Verify output reshaped back to individual frames
-
-**Test Results:**
-- ✓ All 19 tests pass (11 existing + 8 new)
-- ✓ All core tests pass: test_reduction_factor.py, test_model.py, test_train.py
-- ✓ Tests cover all components: config, dataset, model, training, generation
-- ✓ All shape transformations validated for R=4
-
-**Test Coverage:**
-- Config values: REDUCTION_FACTOR, GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN
-- Dataset: truncation, reshaping, sequence pairs
-- Model: input/output projections, forward pass
-- Training: loss computation, per-frame averaging
-- Generation: seed preprocessing, step calculation, output reshaping
-
-**Next Steps:**
-Step 7: Verify end-to-end training and inference
-
-
-## Step 7 Complete: End-to-End Training and Inference Verified (123f73a)
-
-Successfully verified the reduction factor (R=4) implementation through end-to-end training and inference testing.
-
-**Training Verification:**
-- ✓ 20,182 training steps completed successfully
-- ✓ Loss converged from 0.255 to 0.149 (41.6% reduction)
-- ✓ Dataset produces correct shapes [2, 128, 320]
-- ✓ Gradient norm stable around 0.67
-- ✓ Teacher forcing ratio decayed from 0.95 to 0.91
-- ✓ Checkpoint saved to checkpoints_r4/mel_generator.keras (9.64 MB)
-
-**Inference Verification:**
-- ✓ Model creates and generates successfully
-- ✓ API unchanged: [T, 80] frames in/out
-- ✓ Internal grouped processing [T/R, 320] works correctly
-- ✓ Seed truncation to R-divisible length works
-- ✓ Variable seed lengths tested (50, 97, 128, 200)
-- ✓ All shape flows verified
-
-**Fixes Applied:**
-- Updated train.py validation to check GROUPED_MEL_DIM instead of 80
-- Added GROUPED_MEL_DIM to imports in train.py
-
-**Performance Impact:**
-- Sequence length reduced 4x: 512 → 128 effective steps
-- Attention complexity reduced 16x: O(512²) → O(128²)
-- Training speed: ~10.2 steps/sec (98ms/step)
-
-**Test Coverage:**
-- ✓ All 19 unit tests pass
-- ✓ End-to-end training completes successfully
-- ✓ Inference produces correct output shapes
-- ✓ No shape errors or gradient issues
-
-## Implementation Complete ✅
-
-All 7 steps of the mel frame reduction factor implementation are complete and verified:
-1. ✓ Config changes (4009dee)
-2. ✓ Dataset preprocessing (690828b)
-3. ✓ Model I/O projections (beb0bcc)
-4. ✓ Generation method (included in Step 3)
-5. ✓ Training loss computation (22fc63d)
-6. ✓ Comprehensive unit tests (3cd8dc6)
-7. ✓ End-to-end verification (123f73a)
-
-The reduction factor R=4 is fully functional and ready for production use.
-
-
-## Final Verification Complete ✅
-
-All 7 steps of the mel frame reduction factor implementation have been verified and all tasks closed:
-
-**Test Results:**
-- ✓ All 19 reduction factor tests pass
-- ✓ All 4 model tests pass  
-- ✓ All 12 training tests pass (3 skipped)
-- ✓ No test failures or errors
-
-**Implementation Summary:**
-1. ✓ Config changes (REDUCTION_FACTOR=4, GROUPED_MEL_DIM=320, EFFECTIVE_SEQ_LEN=128)
-2. ✓ Dataset preprocessing (truncation, reshaping [T,80]→[T/R,320])
-3. ✓ Model I/O projections (input/output use GROUPED_MEL_DIM)
-4. ✓ Generation method (maintains API compatibility, internal grouped processing)
-5. ✓ Training loss computation (per-frame MSE with reshaping)
-6. ✓ Comprehensive unit tests (19 tests covering all components)
-7. ✓ End-to-end verification (training converges, inference works)
-
-**Performance Impact:**
-- Sequence length reduced 4x: 512 → 128 effective steps
-- Attention complexity reduced 16x: O(512²) → O(128²)
-- Training speed: ~10.2 steps/sec (98ms/step)
-
-**Task Status:**
-- task-1773370940-eecb: CLOSED ✓
-
-The reduction factor R=4 is fully functional, tested, and ready for production use.
+Verification results:
+- ✅ All 10 dilated convolution tests pass (2 RF + 4 init + 4 integration)
+- ✅ All 4 existing model tests pass (no regressions)
+- Total test time: ~23 seconds
+
+**Objective Complete:**
+Dilated causal convolutions fully implemented and tested:
+1. ✅ Config: CONV_DILATION_RATES = [1, 2, 4]
+2. ✅ Model: MelGenerator uses dilations in CausalConvBlocks
+3. ✅ Receptive field: Increased from 5 frames (~58ms) to 15 frames (~174ms)
+4. ✅ Logging: Initialization logs dilation rates and receptive field
+5. ✅ Tests: Comprehensive test suite with 10 tests covering RF calculation, initialization, and integration
+
+All acceptance criteria met. Ready for training.

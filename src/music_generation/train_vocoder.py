@@ -4,6 +4,11 @@ import argparse
 import os
 from pathlib import Path
 import tensorflow as tf
+
+# Suppress verbose TensorFlow logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 0=all, 1=filter INFO, 2=filter WARNING, 3=filter ERROR
+tf.get_logger().setLevel('ERROR')
+
 from src.music_generation import vocoder
 from src.music_generation import losses
 from src.music_generation import config
@@ -106,15 +111,28 @@ def train_vocoder(
     # Compile with optimizer
     training_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr))
     
+    # Load latest checkpoint if exists
+    checkpoint_dir_path = Path(checkpoint_dir)
+    checkpoints = sorted(checkpoint_dir_path.glob("checkpoint_epoch_*.weights.h5"))
+    initial_epoch = 0
+    if checkpoints:
+        latest_checkpoint = checkpoints[-1]
+        print(f"Loading checkpoint: {latest_checkpoint}")
+        training_model.load_weights(str(latest_checkpoint))
+        # Extract epoch number from filename: checkpoint_epoch_23.weights.h5 -> 23
+        epoch_str = latest_checkpoint.stem.replace('.weights', '').split('_')[-1]
+        initial_epoch = int(epoch_str)
+        print(f"Resuming from epoch {initial_epoch}")
+    
     # Callbacks
-    checkpoint_path = Path(checkpoint_dir) / "checkpoint_epoch_{epoch:02d}.weights.h5"
+    checkpoint_path = checkpoint_dir_path / "checkpoint_epoch_{epoch:02d}.weights.h5"
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
             str(checkpoint_path),
             save_weights_only=True,
             save_freq='epoch'
         ),
-        tf.keras.callbacks.TensorBoard(log_dir=str(Path(checkpoint_dir) / "logs"))
+        tf.keras.callbacks.TensorBoard(log_dir=str(checkpoint_dir_path / "logs"))
     ]
     
     # Train
@@ -122,6 +140,7 @@ def train_vocoder(
     training_model.fit(
         train_dataset,
         epochs=epochs,
+        initial_epoch=initial_epoch,
         callbacks=callbacks
     )
 

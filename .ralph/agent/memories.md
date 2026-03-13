@@ -2,6 +2,30 @@
 
 ## Patterns
 
+### mem-1773382671-79f8
+> Integration tests for dilated convolutions: test_output_shape_unchanged uses GROUPED_MEL_DIM (320) not N_MELS (80) for model I/O. test_causality_preserved compares full vs truncated sequence outputs. test_generation_works uses [T,N_MELS] seed without batch dim. All 10 tests pass.
+<!-- tags: testing, dilated-convolutions, tensorflow | created: 2026-03-13 -->
+
+### mem-1773382509-1fb7
+> Model initialization tests: test_initialization_default verifies model creates with default [1,2,4] dilations and has conv1/conv2/conv_head attributes. test_initialization_custom verifies custom rates via monkeypatch. test_dilation_list_too_short/too_long verify warnings for <3 or >3 elements. Monkeypatch targets model module (not config) since CONV_DILATION_RATES imported at module level. caplog.set_level(logging.WARNING) captures logging output. All 4 tests pass.
+<!-- tags: testing, dilated-convolutions, tensorflow | created: 2026-03-13 -->
+
+### mem-1773382371-88e4
+> Receptive field calculation tests: test_rf_formula_default verifies RF=15 with [1,2,4], test_rf_formula_custom verifies formula with [1,1,1] (RF=7) and [2,4,8] (RF=29). Formula: RF = 1 + 2*sum(dilations). Both tests pass.
+<!-- tags: testing, dilated-convolutions, tensorflow | created: 2026-03-13 -->
+
+### mem-1773382278-919b
+> Test file structure for dilated convolutions: 3 classes (TestReceptiveFieldCalculation, TestModelInitialization, TestIntegration) with 10 test methods total. All stubs use 'pass' for incremental implementation. Follows pytest class-based organization pattern.
+<!-- tags: testing, dilated-convolutions, tensorflow | created: 2026-03-13 -->
+
+### mem-1773382177-bb16
+> MelGenerator.__init__() updated with dilated convolutions: extracts dilation rates from CONV_DILATION_RATES config with padding/truncation for 3 conv layers, logs warnings for mismatched list lengths, calculates and logs receptive field (15 frames ~174ms with [1,2,4]). Passes dilation_rate to CausalConvBlock constructors: conv1=d1, conv2=d2, conv_head=d3. All 4 existing model tests pass.
+<!-- tags: dilated-convolutions, model, tensorflow | created: 2026-03-13 -->
+
+### mem-1773380888-2074
+> CONV_DILATION_RATES config added: [1, 2, 4] for progressive dilation in conv1, conv2, conv_head. Increases receptive field from 5 frames (~58ms) to 15 frames (~174ms). Formula: RF = 1 + 2*sum(dilations)
+<!-- tags: dilated-convolutions, config, tensorflow | created: 2026-03-13 -->
+
 ### mem-1773372524-ce59
 > Step 6 complete: Added 8 comprehensive unit tests for reduction factor. TestModelProjections (2 tests) verify model I/O with grouped frames. TestLossComputation (2 tests) verify per-frame loss reshaping. TestGenerationWithReduction (4 tests) verify seed truncation, reshaping, and output. Total 19 tests pass (11 existing + 8 new). All shape transformations validated for R=4.
 <!-- tags: reduction-factor, testing, tensorflow | created: 2026-03-13 -->

@@ -71,9 +71,9 @@ def test_window_sizes_in_model():
     model = MelGenerator()
     
     # Verify each transformer has the correct window size
-    assert model.transformer1.attn.window_size == WINDOW_SIZES[0]  # 128
-    assert model.transformer2.attn.window_size == WINDOW_SIZES[1]  # 256
-    assert model.transformer3.attn.window_size == WINDOW_SIZES[2]  # 512
+    assert model.transformer1.attn.window_size == WINDOW_SIZES[0]  # 32
+    assert model.transformer2.attn.window_size == WINDOW_SIZES[1]  # 64
+    assert model.transformer3.attn.window_size == WINDOW_SIZES[2]  # 128
 
 
 def test_relative_position_bias_shape():
