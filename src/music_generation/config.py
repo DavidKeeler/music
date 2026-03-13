@@ -39,6 +39,12 @@ NUM_LAYERS = 3
 # Local attention window sizes per layer
 WINDOW_SIZES = [128, 256, 512]
 
+# Dilated Convolution Configuration
+# Dilation rates for conv1, conv2, conv_head layers
+# Progressive dilation increases receptive field: 1 + 2*sum(rates) frames
+# Default [1, 2, 4] gives 15 frames (~174ms at 22.05kHz with hop=256)
+CONV_DILATION_RATES = [1, 2, 4]
+
 # Training Parameters
 # Batch size for training (reduced to 4 for memory optimization)
 BATCH_SIZE = 4
