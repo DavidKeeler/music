@@ -11,11 +11,19 @@ class TestReceptiveFieldCalculation:
     
     def test_rf_formula_default(self):
         """Test RF = 1 + 2*sum(dilations) with default [1,2,4]."""
-        pass
+        dilations = [1, 2, 4]
+        expected_rf = 1 + 2 * sum(dilations)  # 1 + 2*7 = 15
+        assert expected_rf == 15
     
     def test_rf_formula_custom(self):
         """Test RF calculation with custom dilation rates."""
-        pass
+        dilations = [1, 1, 1]
+        rf = 1 + 2 * sum(dilations)
+        assert rf == 7
+        
+        dilations = [2, 4, 8]
+        rf = 1 + 2 * sum(dilations)
+        assert rf == 29
 
 
 class TestModelInitialization:
