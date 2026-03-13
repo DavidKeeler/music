@@ -3,7 +3,7 @@
 import tensorflow as tf
 import pytest
 from src.music_generation.model import MelGenerator
-from src.music_generation.config import GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN
+from src.music_generation.config import GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN, N_MELS
 
 
 class TestReceptiveFieldCalculation:
@@ -70,16 +70,47 @@ class TestIntegration:
     
     def test_output_shape_unchanged(self):
         """Test model output shape matches input shape."""
-        pass
+        model = MelGenerator()
+        x = tf.random.normal([2, 10, GROUPED_MEL_DIM])
+        y = model(x, training=False)
+        assert y.shape == x.shape
     
     def test_causality_preserved(self):
         """Test output at time t doesn't depend on future inputs."""
-        pass
+        model = MelGenerator()
+        x = tf.random.normal([1, 20, GROUPED_MEL_DIM])
+        
+        # Get output for full sequence
+        y_full = model(x, training=False)
+        
+        # Get output for truncated sequence (first 10 frames)
+        y_truncated = model(x[:, :10, :], training=False)
+        
+        # First 10 frames should match (causality preserved)
+        tf.debugging.assert_near(y_full[:, :10, :], y_truncated, atol=1e-5)
     
     def test_forward_pass_no_errors(self):
         """Test forward pass completes without errors."""
-        pass
+        model = MelGenerator()
+        x = tf.random.normal([4, 32, GROUPED_MEL_DIM])
+        y = model(x, training=True)
+        
+        # Verify output is valid (no NaN/Inf)
+        assert not tf.reduce_any(tf.math.is_nan(y))
+        assert not tf.reduce_any(tf.math.is_inf(y))
     
     def test_generation_works(self):
         """Test autoregressive generation works with dilated convolutions."""
-        pass
+        model = MelGenerator()
+        # generate() expects [T, N_MELS] without batch dimension
+        seed = tf.random.normal([20, N_MELS])
+        
+        # Generate 10 additional frames
+        generated = model.generate(seed, num_frames=10)
+        
+        # Verify output shape: 10 frames generated
+        assert generated.shape == (10, N_MELS)
+        
+        # Verify output is valid
+        assert not tf.reduce_any(tf.math.is_nan(generated))
+        assert not tf.reduce_any(tf.math.is_inf(generated))
