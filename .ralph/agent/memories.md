@@ -2,6 +2,18 @@
 
 ## Patterns
 
+### mem-1773371818-d9c8
+> Model I/O projections updated for R=4: input/output use GROUPED_MEL_DIM (320) instead of N_MELS (80). generate() maintains API compatibility with individual frames [T,80] but internally operates on grouped frames [T/R,320]. Seed truncation handles non-divisible lengths. Context window uses EFFECTIVE_SEQ_LEN (128).
+<!-- tags: reduction-factor, model, tensorflow | created: 2026-03-13 -->
+
+### mem-1773371161-60d8
+> Dataset preprocessing for R=4: truncates mel to R-divisible length, reshapes [T,80]→[T/R,320], uses EFFECTIVE_SEQ_LEN=128 for sequence checks. Normalization applied before reshaping. Dataset returns [B,128,320] tensors. 11 unit tests verify truncation, reshaping, and sequence pairs.
+<!-- tags: reduction-factor, dataset, tensorflow | created: 2026-03-13 -->
+
+### mem-1773371022-11cb
+> Reduction factor config added: REDUCTION_FACTOR=4, GROUPED_MEL_DIM=320 (80*4), EFFECTIVE_SEQ_LEN=128 (512/4). Placed after NUM_EPOCHS in config.py. Enables 4x training speedup via multi-frame prediction.
+<!-- tags: reduction-factor, config, tensorflow | created: 2026-03-13 -->
+
 ### mem-1773159091-b49f
 > BodyPointModule implemented: integrates PoseDetector, SkeletonNormalizer, FeatureBuilder, HistoryBuffer, PoseEncoder. Stateful interface with process_frame(), reset(), get_state(). Supports 3 output modes (embedding, with_confidence, with_keypoints). Fixed normalizer float32 cast and removed extra expand_dims. All 59 tests pass.
 <!-- tags: body-point, integration, tensorflow | created: 2026-03-10 -->

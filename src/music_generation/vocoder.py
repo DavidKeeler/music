@@ -327,7 +327,7 @@ class VocoderDataset:
         )
         
         if shuffle:
-            dataset = dataset.shuffle(1000)
+            dataset = dataset.shuffle(100)
         
         dataset = dataset.batch(batch_size)
         dataset = dataset.prefetch(2)

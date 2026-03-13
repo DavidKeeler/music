@@ -26,25 +26,86 @@ Following the 7-step incremental plan from specs/mel-frame-reduction-factor/plan
 
 ## Current Status
 ✓ Step 1 complete: Config changes committed (4009dee)
-- Added REDUCTION_FACTOR=4, GROUPED_MEL_DIM=320, EFFECTIVE_SEQ_LEN=128
-- All values verified correct
-- Ready for Step 2: Dataset preprocessing
+✓ Step 2 complete: Dataset preprocessing committed (690828b)
+
+**Step 2 Summary:**
+- Modified dataset.py to truncate and reshape mel sequences
+- Truncation: mel_length → (mel_length // R) * R to ensure divisibility
+- Reshape: [T, 80] → [T/R, 320] for grouped frame processing
+- Updated all sequence length checks to use EFFECTIVE_SEQ_LEN (128)
+- Updated stride calculation for grouped frames
+- Created 11 unit tests covering all transformations
+- Verified end-to-end with real MusicNet data: [2, 128, 320] ✓
+
+**Key Implementation Details:**
+- Truncation happens before reshaping to avoid dimension errors
+- Normalization applied before reshaping (preserves per-frame statistics)
+- Input/target pairs use 1-step offset on grouped sequences
+- Dataset API unchanged: still returns (input, target) batches
 
 ## Next Steps
-1. Pick up Step 2: Update dataset preprocessing for grouped frames
+1. Step 3: Modify model input/output projections to handle GROUPED_MEL_DIM
 
 
-## Step 2 Implementation: Dataset Preprocessing
+## Step 3 Complete: Model I/O Projections Updated (beb0bcc)
 
-Starting implementation of grouped frame preprocessing in dataset.py.
+Successfully modified MelGenerator to handle grouped frames with R=4 reduction factor.
 
-Key changes needed:
-1. Import REDUCTION_FACTOR, GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN from config
-2. In _generator(), after loading mel:
-   - Truncate to R-divisible length
-   - Reshape [T, 80] → [T/R, 320]
-3. Update sequence length check from SEQ_LEN to EFFECTIVE_SEQ_LEN
-4. Update stride calculation to use EFFECTIVE_SEQ_LEN
-5. Update output signature to use EFFECTIVE_SEQ_LEN and GROUPED_MEL_DIM
+**Changes Made:**
+1. Updated input projection: `Dense(N_MELS)` → `Dense(GROUPED_MEL_DIM)` (80 → 320)
+2. Updated output projection: `Dense(N_MELS)` → `Dense(GROUPED_MEL_DIM)` (80 → 320)
+3. Modified `generate()` method for grouped frame prediction:
+   - Truncates seed to R-divisible length (handles edge cases)
+   - Reshapes seed: `[T, 80]` → `[T/R, 320]` for internal processing
+   - Generates in steps of R frames: `num_steps = (num_frames + R - 1) // R`
+   - Reshapes output back: `[num_steps, 320]` → `[num_steps*R, 80]`
+   - Truncates to exact `num_frames` requested
+4. Updated all model tests to use `GROUPED_MEL_DIM` and `EFFECTIVE_SEQ_LEN`
 
-This maintains the same API (returns input/target pairs) but internally operates on grouped frames.
+**Test Results:**
+- ✓ All model tests pass (4/4)
+- ✓ All reduction factor tests pass (11/11)
+- ✓ Model correctly processes grouped frames `[B, T/R, 320]`
+- ✓ Generate method maintains API compatibility with individual frames
+
+**Key Design Decisions:**
+- External API unchanged: `generate()` still accepts/returns `[T, 80]` individual frames
+- Internal operations use grouped frames `[T/R, 320]` for efficiency
+- Seed truncation handles non-divisible lengths gracefully
+- Context window now uses `EFFECTIVE_SEQ_LEN` (128) instead of `SEQ_LEN` (512)
+
+**Next Steps:**
+Step 4 will update the model generation method (already done in this step), so we can move to Step 5: modify training loss computation to handle grouped frames.
+
+
+## Step 4 Complete: Generation Method Already Updated
+
+Step 4 (update model generation method) was completed as part of Step 3 since the I/O projections and generation logic are tightly coupled. The `generate()` method now:
+- Handles grouped frame prediction (R frames per step)
+- Truncates seed to R-divisible length
+- Reshapes seed and output between individual and grouped frames
+- Maintains API compatibility with external callers
+
+No additional work needed for Step 4.
+
+
+## Step 5: Training Loss Computation
+
+**Task:** Modify `train_step()` to compute per-frame loss and average across R frames.
+
+**Current State:**
+- Loss computed on grouped frames: `[B, T/R, 320]`
+- Uses MAE: `tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))`
+- Applied in both `_pure_teacher_forcing()` and `_parallel_scheduled_sampling()`
+
+**Required Changes:**
+1. Reshape predictions: `[B, T/R, 320] → [B, T/R, 4, 80]`
+2. Reshape targets: `[B, T/R, 320] → [B, T/R, 4, 80]`
+3. Compute per-frame loss: MSE per frame → `[B, T/R, 4]`
+4. Average across all dimensions: scalar loss
+
+**Implementation Plan:**
+- Update both training methods with identical loss computation
+- Add inline comments explaining reshaping logic
+- Maintain existing teacher forcing schedule logic
+- Use MSE instead of MAE for per-frame loss (as specified in plan)

@@ -170,7 +170,21 @@ class MelGeneratorTraining(tf.keras.Model):
         """Single forward pass with ground truth."""
         with tf.GradientTape() as tape:
             preds = self.base_model(x, training=True)
-            loss = tf.reduce_mean(tf.abs(preds[:, :-1, :] - y[:, 1:, :]))
+            
+            # Compute per-frame loss: reshape [B, T/R, R*80] -> [B, T/R, R, 80]
+            # to compute loss independently for each of R frames
+            from .config import REDUCTION_FACTOR, N_MELS
+            preds_shifted = preds[:, :-1, :]  # [B, T/R-1, R*80]
+            targets_shifted = y[:, 1:, :]     # [B, T/R-1, R*80]
+            
+            # Reshape to separate R frames
+            batch_size = tf.shape(preds_shifted)[0]
+            seq_len = tf.shape(preds_shifted)[1]
+            preds_frames = tf.reshape(preds_shifted, [batch_size, seq_len, REDUCTION_FACTOR, N_MELS])
+            target_frames = tf.reshape(targets_shifted, [batch_size, seq_len, REDUCTION_FACTOR, N_MELS])
+            
+            # Compute MSE per frame and average across all dimensions
+            loss = tf.reduce_mean(tf.square(preds_frames - target_frames))
         
         grads = tape.gradient(loss, self.base_model.trainable_variables)
         grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
@@ -195,7 +209,21 @@ class MelGeneratorTraining(tf.keras.Model):
         # Pass 2: Train with mixed input
         with tf.GradientTape() as tape:
             preds_pass2 = self.base_model(mixed_input, training=True)
-            loss = tf.reduce_mean(tf.abs(preds_pass2[:, :-1, :] - y[:, 1:, :]))
+            
+            # Compute per-frame loss: reshape [B, T/R, R*80] -> [B, T/R, R, 80]
+            # to compute loss independently for each of R frames
+            from .config import REDUCTION_FACTOR, N_MELS
+            preds_shifted_loss = preds_pass2[:, :-1, :]  # [B, T/R-1, R*80]
+            targets_shifted = y[:, 1:, :]                # [B, T/R-1, R*80]
+            
+            # Reshape to separate R frames
+            batch_size_loss = tf.shape(preds_shifted_loss)[0]
+            seq_len_loss = tf.shape(preds_shifted_loss)[1]
+            preds_frames = tf.reshape(preds_shifted_loss, [batch_size_loss, seq_len_loss, REDUCTION_FACTOR, N_MELS])
+            target_frames = tf.reshape(targets_shifted, [batch_size_loss, seq_len_loss, REDUCTION_FACTOR, N_MELS])
+            
+            # Compute MSE per frame and average across all dimensions
+            loss = tf.reduce_mean(tf.square(preds_frames - target_frames))
         
         grads = tape.gradient(loss, self.base_model.trainable_variables)
         grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
@@ -219,8 +247,7 @@ class MelGeneratorTraining(tf.keras.Model):
         )
 
 
-def train(data_dir, cache_dir, checkpoint_dir, batch_size=BATCH_SIZE, 
-          epochs=NUM_EPOCHS, lr=LEARNING_RATE, resume_from=None):
+def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_from=None):
     """Train the mel generator model."""
     
     check_batch_size(batch_size)

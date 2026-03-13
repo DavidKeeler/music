@@ -5,15 +5,16 @@ import numpy as np
 from src.music_generation.train import MelGeneratorTraining, exponential_tf_schedule
 from src.music_generation.config import (
     D_MODEL, NUM_HEADS, NUM_LAYERS, WINDOW_SIZES, 
-    INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS
+    INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS,
+    GROUPED_MEL_DIM
 )
 
 
 class SimpleMelGenerator(tf.keras.Model):
-    """Minimal mock generator for testing."""
+    """Minimal mock generator for testing with reduction factor support."""
     def __init__(self):
         super().__init__()
-        self.dense = tf.keras.layers.Dense(80)
+        self.dense = tf.keras.layers.Dense(GROUPED_MEL_DIM)
     
     def call(self, x, training=False):
         return self.dense(x)
@@ -94,8 +95,8 @@ class TestGradientFlow(tf.test.TestCase):
         # Create sample data
         batch_size = 2
         seq_len = 10
-        x = tf.random.normal([batch_size, seq_len, 80])
-        y = tf.random.normal([batch_size, seq_len, 80])
+        x = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
+        y = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
         
         with tf.GradientTape() as tape:
             # Run training step logic
@@ -129,8 +130,8 @@ class TestGradientFlow(tf.test.TestCase):
         # Create sample data
         batch_size = 2
         seq_len = 10
-        x = tf.random.normal([batch_size, seq_len, 80])
-        y = tf.random.normal([batch_size, seq_len, 80])
+        x = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
+        y = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
         
         # Compute loss with stop_gradient (current implementation)
         ar_input = x[:, :1, :]
@@ -168,8 +169,8 @@ class TestGradientFlow(tf.test.TestCase):
         
         batch_size = 2
         seq_len = 20
-        x = tf.random.normal([batch_size, seq_len, 80])
-        y = tf.random.normal([batch_size, seq_len, 80])
+        x = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
+        y = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
         
         with tf.GradientTape() as tape:
             ar_input = x[:, :1, :]
@@ -218,8 +219,8 @@ class TestIntegration(tf.test.TestCase):
         # Create sample data
         batch_size = 2
         seq_len = 32
-        x = tf.random.normal([batch_size, seq_len, 80])
-        y = tf.random.normal([batch_size, seq_len, 80])
+        x = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
+        y = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
         
         # Train for 100 steps - should not raise OOM or TypeError
         for step in range(100):
@@ -262,8 +263,8 @@ class TestIntegration(tf.test.TestCase):
         # Train for a few steps to build the model
         batch_size = 2
         seq_len = 16
-        x = tf.random.normal([batch_size, seq_len, 80])
-        y = tf.random.normal([batch_size, seq_len, 80])
+        x = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
+        y = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
         
         for _ in range(10):
             training_model.train_step((x, y))
