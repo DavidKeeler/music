@@ -31,19 +31,38 @@ class TestModelInitialization:
     
     def test_initialization_default(self):
         """Test model initializes with default [1,2,4] dilations."""
-        pass
+        model = MelGenerator()
+        assert model is not None
+        assert hasattr(model, 'conv1')
+        assert hasattr(model, 'conv2')
+        assert hasattr(model, 'conv_head')
     
-    def test_initialization_custom(self):
+    def test_initialization_custom(self, monkeypatch):
         """Test model initializes with custom dilation rates."""
-        pass
+        import src.music_generation.model as model
+        monkeypatch.setattr(model, 'CONV_DILATION_RATES', [2, 4, 8])
+        m = model.MelGenerator()
+        assert m is not None
     
-    def test_dilation_list_too_short(self):
+    def test_dilation_list_too_short(self, monkeypatch, caplog):
         """Test warning issued when list has <3 elements."""
-        pass
+        import src.music_generation.model as model
+        import logging
+        caplog.set_level(logging.WARNING)
+        monkeypatch.setattr(model, 'CONV_DILATION_RATES', [1, 2])
+        m = model.MelGenerator()
+        assert "has 2 values" in caplog.text
+        assert "Padding with 1s" in caplog.text
     
-    def test_dilation_list_too_long(self):
+    def test_dilation_list_too_long(self, monkeypatch, caplog):
         """Test warning issued when list has >3 elements."""
-        pass
+        import src.music_generation.model as model
+        import logging
+        caplog.set_level(logging.WARNING)
+        monkeypatch.setattr(model, 'CONV_DILATION_RATES', [1, 2, 4, 8, 16])
+        m = model.MelGenerator()
+        assert "has 5 values" in caplog.text
+        assert "Using first 3" in caplog.text
 
 
 class TestIntegration:
