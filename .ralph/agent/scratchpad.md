@@ -109,3 +109,78 @@ No additional work needed for Step 4.
 - Add inline comments explaining reshaping logic
 - Maintain existing teacher forcing schedule logic
 - Use MSE instead of MAE for per-frame loss (as specified in plan)
+
+
+## Step 5 Complete: Training Loss Computation (22fc63d)
+
+Successfully modified training loss computation to handle grouped frames with per-frame loss averaging.
+
+**Changes Made:**
+1. Updated `_pure_teacher_forcing()`:
+   - Reshape predictions: `[B, T/R-1, R*80] → [B, T/R-1, R, 80]`
+   - Reshape targets: `[B, T/R-1, R*80] → [B, T/R-1, R, 80]`
+   - Compute MSE per frame: `tf.square(preds_frames - target_frames)`
+   - Average across all dimensions: `tf.reduce_mean()`
+
+2. Updated `_parallel_scheduled_sampling()`:
+   - Same reshaping and loss computation logic
+   - Applied to Pass 2 (training pass with mixed input)
+
+3. Updated test infrastructure:
+   - `SimpleMelGenerator` now uses `GROUPED_MEL_DIM` (320) instead of 80
+   - All test data updated to use `GROUPED_MEL_DIM`
+   - Added `GROUPED_MEL_DIM` to test imports
+
+**Test Results:**
+- ✓ All training tests pass (8/8)
+- ✓ All reduction factor tests pass (11/11)
+- ✓ All model tests pass (4/4)
+- ✓ Loss computation correctly handles grouped frames
+- ✓ Gradients flow correctly through reshaped tensors
+
+**Key Implementation Details:**
+- Loss changed from MAE to MSE (as specified in plan)
+- Reshaping uses dynamic batch_size and seq_len from tf.shape()
+- Both training methods use identical loss computation
+- Teacher forcing schedule logic unchanged
+- Inline comments explain reshaping rationale
+
+**Next Steps:**
+Step 6: Add unit tests for reduction factor (already exists - tests/test_reduction_factor.py with 11 tests)
+Step 7: Verify end-to-end training and inference
+
+
+## Step 6 Complete: Comprehensive Unit Tests (3cd8dc6)
+
+Successfully added comprehensive unit tests for all reduction factor components.
+
+**Changes Made:**
+1. Added TestModelProjections (2 tests):
+   - test_model_input_shape: Verify model accepts grouped frames [B, T/R, R*80]
+   - test_model_output_shape: Verify model outputs grouped frames [B, T/R, R*80]
+
+2. Added TestLossComputation (2 tests):
+   - test_loss_reshaping: Verify loss reshapes to [B, T/R-1, R, 80] format
+   - test_loss_scalar_output: Verify loss produces scalar value
+
+3. Added TestGenerationWithReduction (4 tests):
+   - test_seed_truncation: Verify seed truncated to R-divisible length
+   - test_seed_reshaping: Verify seed reshaped to grouped format
+   - test_generation_steps: Verify correct number of steps (ceil(frames/R))
+   - test_output_reshaping: Verify output reshaped back to individual frames
+
+**Test Results:**
+- ✓ All 19 tests pass (11 existing + 8 new)
+- ✓ All core tests pass: test_reduction_factor.py, test_model.py, test_train.py
+- ✓ Tests cover all components: config, dataset, model, training, generation
+- ✓ All shape transformations validated for R=4
+
+**Test Coverage:**
+- Config values: REDUCTION_FACTOR, GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN
+- Dataset: truncation, reshaping, sequence pairs
+- Model: input/output projections, forward pass
+- Training: loss computation, per-frame averaging
+- Generation: seed preprocessing, step calculation, output reshaping
+
+**Next Steps:**
+Step 7: Verify end-to-end training and inference

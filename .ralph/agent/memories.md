@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1773372524-ce59
+> Step 6 complete: Added 8 comprehensive unit tests for reduction factor. TestModelProjections (2 tests) verify model I/O with grouped frames. TestLossComputation (2 tests) verify per-frame loss reshaping. TestGenerationWithReduction (4 tests) verify seed truncation, reshaping, and output. Total 19 tests pass (11 existing + 8 new). All shape transformations validated for R=4.
+<!-- tags: reduction-factor, testing, tensorflow | created: 2026-03-13 -->
+
 ### mem-1773371818-d9c8
 > Model I/O projections updated for R=4: input/output use GROUPED_MEL_DIM (320) instead of N_MELS (80). generate() maintains API compatibility with individual frames [T,80] but internally operates on grouped frames [T/R,320]. Seed truncation handles non-divisible lengths. Context window uses EFFECTIVE_SEQ_LEN (128).
 <!-- tags: reduction-factor, model, tensorflow | created: 2026-03-13 -->

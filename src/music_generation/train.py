@@ -8,7 +8,8 @@ import psutil
 from .config import (
     DATA_DIR, CACHE_DIR, CHECKPOINT_DIR,
     BATCH_SIZE, SEQ_LEN, LEARNING_RATE, NUM_EPOCHS,
-    INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS, MAX_CONTEXT_FRAMES
+    INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS, MAX_CONTEXT_FRAMES,
+    GROUPED_MEL_DIM
 )
 from .dataset import create_dataset
 from .model import MelGenerator
@@ -261,7 +262,7 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
         print(f"  Input shape: {x.shape}")
         print(f"  Target shape: {y.shape}")
         tf.debugging.assert_equal(tf.shape(x)[0], batch_size, message="Batch size mismatch")
-        tf.debugging.assert_equal(tf.shape(x)[2], 80, message="Mel channels should be 80")
+        tf.debugging.assert_equal(tf.shape(x)[2], GROUPED_MEL_DIM, message=f"Mel channels should be {GROUPED_MEL_DIM}")
         tf.debugging.assert_equal(tf.shape(x), tf.shape(y), message="Input and target shapes must match")
     print("✓ Dataset validation passed")
     
