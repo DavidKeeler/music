@@ -3,9 +3,11 @@
 import tensorflow as tf
 from src.music_generation.config import (
     D_MODEL, NUM_HEADS, SEQ_LEN, N_MELS, WINDOW_SIZES,
-    REDUCTION_FACTOR, GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN
+    REDUCTION_FACTOR, GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN,
+    CONV_DILATION_RATES, FRAME_STEP, SAMPLE_RATE
 )
 from src.music_generation.layers import CausalConvBlock, TransformerBlock
+
 
 
 class MelGenerator(tf.keras.Model):
@@ -30,20 +32,52 @@ class MelGenerator(tf.keras.Model):
     def __init__(self):
         super().__init__()
         
+        # Get dilation rates (use first 3, pad with 1 if insufficient)
+        dilations = list(CONV_DILATION_RATES) + [1, 1, 1]
+        d1, d2, d3 = dilations[0], dilations[1], dilations[2]
+        
+        # Warn if list length mismatch
+        if len(CONV_DILATION_RATES) < 3:
+            import logging
+            logging.warning(
+                f"CONV_DILATION_RATES has {len(CONV_DILATION_RATES)} values, "
+                f"expected 3. Padding with 1s: {[d1, d2, d3]}"
+            )
+        elif len(CONV_DILATION_RATES) > 3:
+            import logging
+            logging.warning(
+                f"CONV_DILATION_RATES has {len(CONV_DILATION_RATES)} values, "
+                f"expected 3. Using first 3: {[d1, d2, d3]}"
+            )
+        
+        # Calculate and log receptive field
+        receptive_field_frames = 1 + 2 * (d1 + d2 + d3)
+        frame_duration_ms = (FRAME_STEP / SAMPLE_RATE) * 1000
+        receptive_field_ms = receptive_field_frames * frame_duration_ms
+        
+        import logging
+        logging.info(
+            f"MelGenerator initialized with dilation rates [{d1}, {d2}, {d3}]"
+        )
+        logging.info(
+            f"Total receptive field: {receptive_field_frames} frames "
+            f"(~{receptive_field_ms:.1f} ms)"
+        )
+        
         # Input projection: GROUPED_MEL_DIM -> D_MODEL
         self.input_proj = tf.keras.layers.Dense(D_MODEL)
         
-        # Causal conv layers
-        self.conv1 = CausalConvBlock(D_MODEL, kernel_size=3, residual=True)
-        self.conv2 = CausalConvBlock(D_MODEL, kernel_size=3, residual=True)
+        # Causal conv layers with progressive dilation
+        self.conv1 = CausalConvBlock(D_MODEL, kernel_size=3, dilation_rate=d1, residual=True)
+        self.conv2 = CausalConvBlock(D_MODEL, kernel_size=3, dilation_rate=d2, residual=True)
         
         # Transformer stack with explicit layers and increasing window sizes
         self.transformer1 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[0])
         self.transformer2 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[1])
         self.transformer3 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[2])
         
-        # Conv head
-        self.conv_head = CausalConvBlock(D_MODEL, kernel_size=3, residual=True)
+        # Conv head with largest dilation
+        self.conv_head = CausalConvBlock(D_MODEL, kernel_size=3, dilation_rate=d3, residual=True)
         
         # Output projection: D_MODEL -> GROUPED_MEL_DIM
         self.output_proj = tf.keras.layers.Dense(GROUPED_MEL_DIM)
@@ -146,7 +180,7 @@ class MelGenerator(tf.keras.Model):
             
             # Temperature scaling: add noise proportional to temperature
             if temperature > 0.0:
-                noise = tf.random.normal(tf.shape(next_grouped)) * temperature * 0.1
+                noise = tf.random.normal(tf.shape(next_grouped)) * 0.02 * temperature
                 next_grouped = next_grouped + noise
             
             # Append to context and generated
