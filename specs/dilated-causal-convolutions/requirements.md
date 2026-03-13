@@ -97,4 +97,35 @@ If the configuration list `CONV_DILATION_RATES` has the wrong length (not exactl
 
 What's the desired behavior?
 
+### A5:
+**Use only the first N values** and ignore extras (with a warning if extras exist or if insufficient values are provided)
+
+---
+
+## Q6: Documentation Requirements
+
+What documentation should accompany this change?
+
+- Update **README.md** with the new config parameter and receptive field explanation?
+- Add **inline code comments** explaining the dilation progression?
+- Create a **migration guide** for users with existing checkpoints?
+- Add **docstring updates** to the MelGenerator class?
+
+Which documentation updates are needed?
+
+### A6:
+**Create or update a model architecture diagram** showing the dilated convolution stack and receptive field progression
+
+---
+
+## Q7: Default Dilation Values
+
+What should be the default value for `CONV_DILATION_RATES` in config.py?
+
+- **[1, 2, 4]** - The recommended progressive dilation from the rough idea?
+- **[1, 1, 1]** - Conservative default matching current behavior?
+- Something else?
+
+Which default makes sense for new users?
+
 ---
