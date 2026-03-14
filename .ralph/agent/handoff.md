@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-13 06:19:34 UTC_
+_Generated: 2026-03-14 05:39:00 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** 407c92d: chore: auto-commit before merge (loop primary)
+- **HEAD:** 12a74bb: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -127,12 +127,19 @@ _Generated: 2026-03-13 06:19:34 UTC_
 - [x] Implement model initialization tests
 - [x] Implement integration tests
 - [x] Run test suite and verify all pass
+- [x] Scaffolding: CLI entry point, dataset registry, state tracking
+- [x] HTTP downloader with resume, retry, checksum
+- [x] Auto-download datasets: PHENICX, Edinburgh, AIST++
+- [x] Semi-manual datasets: MOSA and URMP
+- [x] README generation and manual instructions
+- [x] Wire CLI main() and dry-run support
 
 
 ## Key Files
 
 Recently modified:
 
+- `.gitignore`
 - `.ralph/agent/handoff.md`
 - `.ralph/agent/memories.md`
 - `.ralph/agent/scratchpad.md`
@@ -142,7 +149,6 @@ Recently modified:
 - `.ralph/current-loop-id`
 - `.ralph/events-20260313-054620.jsonl`
 - `.ralph/events-20260313-060734.jsonl`
-- `.ralph/history.jsonl`
 
 ## Next Session
 
@@ -151,5 +157,16 @@ Session completed successfully. No pending work.
 **Original objective:**
 
 ```
-specs/dilated-causal-convolutions/PROMPT.md
+# PROMPT.md — Dataset Download Tool
+
+## Objective
+
+Build a Python CLI tool at `src/data/download_datasets.py` that downloads conducting-related datasets to `~/data/conducting/`. Idempotent, resumable, with per-dataset flags.
+
+## Key Requirements
+
+- CLI: `python -m src.data.download_datasets --data_dir ~/data/conducting --dataset <names>` or `--all`
+- Flags: `--zenodo-token`, `--url`, `--dry-run`
+- HTTP downloads with resume (Range headers), retry (3x backoff), checksum verification
+- `.downloa...
 ```

@@ -71,9 +71,9 @@ INITIAL_TF_RATIO = 1.0
 # Minimum teacher forcing ratio (floor for exponential decay)
 MIN_TF_RATIO = 0.05
 # Exponential decay rate (k in ε(step) = max(ε_min, ε_initial * exp(-k * step)))
-TF_DECAY_K = 1e-5
+TF_DECAY_K = 5e-7
 # Warmup steps before decay starts (ratio stays at INITIAL_TF_RATIO)
-TF_WARMUP_STEPS = 0
+TF_WARMUP_STEPS = 500000
 # Maximum context frames for autoregressive training (default: 128 for memory efficiency)
 # Trade-off: larger values enable longer-range dependencies but use more memory
 # Can be increased up to SEQ_LEN (512) if memory allows

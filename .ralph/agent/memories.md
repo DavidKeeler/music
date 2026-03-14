@@ -2,6 +2,26 @@
 
 ## Patterns
 
+### mem-1773504805-a639
+> generate_dataset.py: CLI entry point wiring beat_analyzer, conducting_patterns, skeleton_builder, dataset_writer. process_file() loads audio, computes mel, analyzes beats, windows into sample_duration chunks, generates variations per window. Seed: base_seed + file_idx * variations_per_file + var_idx + win_idx. _slice_beat_info() offsets beat times to window-relative. Outputs one .tfrecord per input file. All 5 acceptance criteria verified: TFRecord output, [17,3] keypoints, determinism, ts override, seed variation.
+<!-- tags: generate-dataset, cli, dataset-generator | created: 2026-03-14 -->
+
+### mem-1773472277-c486
+> dataset_writer.py: write_sample(writer, mel, keypoints, time_signature, tempo, fps, source_file) serializes to TFRecord. parse_example() reads back. Uses VarLenFeature for mel/keypoints with mel_frames/kp_frames int64 for reshape. load_dataset() returns parsed tf.data.Dataset. FEATURE_DESCRIPTION dict exported for custom parsing.
+<!-- tags: dataset-writer, tfrecord, dataset-generator | created: 2026-03-14 -->
+
+### mem-1773471333-cbdc
+> skeleton_builder.py: SkeletonBuilder.build_sequence(right_wrist_xy, downbeat_times, fps) -> [num_frames, 17, 3]. REST_POSE_XY dict for 13 static joints. _solve_elbow() uses weighted midpoint + perpendicular bend. _downbeat_mask() creates fade-in/out nod over ±4 frames. Output is (y, x, confidence) MoveNet format. Left wrist mirrors right (negate x). Shoulders shift with wrist height. Lower body fully static.
+<!-- tags: skeleton-builder, dataset-generator, movenet | created: 2026-03-14 -->
+
+### mem-1773470380-f795
+> conducting_patterns.py: PATTERNS dict maps (num,denom) tuples to (x,y) ictus waypoints. interpolate_trajectory() uses CubicSpline with beat_times as knots, supports legato (not-a-knot) and staccato (clamped) styles. VariationParams: amplitude_scale ±30%, timing_jitter ±8%, noise_std, style. PatternGenerator.generate_wrist_trajectory() returns [num_frames, 2] (x,y) array. Needs SkeletonBuilder to expand to [num_frames, 17, 3].
+<!-- tags: conducting-patterns, dataset-generator, spline | created: 2026-03-14 -->
+
+### mem-1773469511-8610
+> BeatAnalyzer in beat_analyzer.py: wraps BeatNet(model=1, mode='offline', inference_model='DBN'). Returns BeatInfo(beat_times, downbeat_times, tempo, time_signature). Requires numpy monkey-patching (np.int=np.int64 etc) for madmom Cython compat, and pyaudio mock. madmom downbeats.py needs patch: np.asarray(results)[:,1] -> [r[1] for r in results]. Supports time_signature_override.
+<!-- tags: beat-analyzer, beatnet, dataset-generator | created: 2026-03-14 -->
+
 ### mem-1773466567-2d45
 > Semi-manual downloads: MOSA uses zenodo_get subprocess with ZENODO_TOKEN env var, -r 11393449 -o dest -k flags. Checks shutil.which() for availability, shutil.disk_usage() for 2.5TB threshold. URMP uses existing download_file() with user URL, auto-extracts zips via zipfile.is_zipfile(). Both print manual_instructions and raise RuntimeError when credentials missing.
 <!-- tags: dataset-download, semi-manual | created: 2026-03-14 -->
@@ -297,6 +317,10 @@
 ## Decisions
 
 ## Fixes
+
+### mem-1773469517-964f
+> madmom 0.16.1 on Python 3.12: requires numpy alias patches (np.int, np.float, np.bool etc removed in numpy 1.24+). Compiled Cython extensions (.pyx -> .so) can't be patched via sed, must monkey-patch numpy at runtime. Also needs collections.abc.MutableSequence fix in processors.py. downbeats.py line 287 needs [r[1] for r in results] instead of np.asarray(results)[:,1] for inhomogeneous arrays.
+<!-- tags: madmom, numpy, compatibility | created: 2026-03-14 -->
 
 ### mem-1773122293-6bcd
 > Checkpoint compatibility: Old checkpoints (saved as full MelGeneratorTraining) incompatible with refactored wrapper due to structural changes. Model architecture (MelGenerator) unchanged. New checkpoints save/load correctly. Recommendation: retrain from scratch (50x+ faster). Format issue, not architecture issue.
