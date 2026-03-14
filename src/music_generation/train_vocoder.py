@@ -114,15 +114,14 @@ def train_vocoder(
     # Load latest checkpoint if exists
     checkpoint_dir_path = Path(checkpoint_dir)
     checkpoints = sorted(checkpoint_dir_path.glob("checkpoint_epoch_*.weights.h5"))
-    initial_epoch = 0
     if checkpoints:
         latest_checkpoint = checkpoints[-1]
         print(f"Loading checkpoint: {latest_checkpoint}")
-        training_model.load_weights(str(latest_checkpoint))
-        # Extract epoch number from filename: checkpoint_epoch_23.weights.h5 -> 23
-        epoch_str = latest_checkpoint.stem.replace('.weights', '').split('_')[-1]
-        initial_epoch = int(epoch_str)
-        print(f"Resuming from epoch {initial_epoch}")
+        try:
+            training_model.load_weights(str(latest_checkpoint))
+        except (ValueError, Exception) as e:
+            print(f"⚠ Could not load checkpoint (architecture changed?): {e}")
+            print("Training from scratch.")
     
     # Callbacks
     checkpoint_path = checkpoint_dir_path / "checkpoint_epoch_{epoch:02d}.weights.h5"
@@ -140,7 +139,6 @@ def train_vocoder(
     training_model.fit(
         train_dataset,
         epochs=epochs,
-        initial_epoch=initial_epoch,
         callbacks=callbacks
     )
 

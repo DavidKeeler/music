@@ -294,12 +294,13 @@ class VocoderDataset:
         
         return mel, audio_segment
     
-    def create_dataset(self, batch_size: int, shuffle: bool = True):
+    def create_dataset(self, batch_size: int, shuffle: bool = True, segments_per_file: int = 100):
         """Create tf.data.Dataset for training.
         
         Args:
             batch_size: Batch size
             shuffle: Whether to shuffle
+            segments_per_file: Number of random crops per audio file per epoch
             
         Returns:
             tf.data.Dataset yielding (mel, audio) pairs
@@ -312,8 +313,9 @@ class VocoderDataset:
             
             for idx in indices:
                 file_path = self.audio_files[idx]
-                mel, audio = self._load_audio_segment(file_path)
-                yield mel.numpy(), audio.numpy()
+                for _ in range(segments_per_file):
+                    mel, audio = self._load_audio_segment(file_path)
+                    yield mel.numpy(), audio.numpy()
         
         # Infer output signature from first sample
         mel, audio = self._load_audio_segment(self.audio_files[0])

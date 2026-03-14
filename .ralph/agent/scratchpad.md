@@ -1,98 +1,134 @@
-# Scratchpad - Dilated Causal Convolutions
+# Dataset Download Tool — Scratchpad
 
-## Current Understanding
+## 2026-03-13: Initial Planning
 
-Implementing dilated causal convolutions to increase temporal receptive field from ~58ms to ~174ms.
+Objective: Build `src/data/download_datasets.py` CLI tool for downloading conducting datasets.
 
-**Status:**
-- ✅ Config added: CONV_DILATION_RATES = [1, 2, 4] in config.py
-- ✅ Imports added: CONV_DILATION_RATES, FRAME_STEP, SAMPLE_RATE in model.py
-- ✅ MelGenerator.__init__() modified with dilation logic (commit 78b0954)
-- ⏳ Need to create comprehensive test suite
+Specs are thorough in `specs/dataset-download/`. Key files:
+- design.md: Full architecture, components, interfaces
+- plan.md: 6-step implementation plan
+- requirements.md: Q&A clarifying scope
+- research/: URL details for each dataset
 
-**Completed:** Modified MelGenerator.__init__() with dilation logic (task-1773380825-2080)
+Plan (following spec's plan.md closely):
+1. Scaffolding: `src/data/__init__.py`, CLI entry point with argparse, dataset registry dataclass, state tracking
+2. HTTP downloader with resume (Range headers), retry, checksum
+3. Auto-download functions (phenicx, edinburgh, aist-plusplus)
+4. Semi-manual datasets (mosa via zenodo_get, urmp via user URL)
+5. Manual instructions + README generation (human36m)
+6. Wire everything together in CLI main(), dry-run support
 
-Implementation includes:
-1. ✅ Extract dilation rates with padding/truncation for 3 conv layers
-2. ✅ Log warnings for list length mismatches
-3. ✅ Calculate and log receptive field at initialization
-4. ✅ Pass dilation_rate parameter to CausalConvBlock constructors
+Starting with task 1: scaffolding + CLI + registry + state tracking. This is the foundation everything else builds on.
 
-Verified:
-- Model initializes successfully
-- Logs show: "MelGenerator initialized with dilation rates [1, 2, 4]"
-- Logs show: "Total receptive field: 15 frames (~174.1 ms)"
-- All 4 existing model tests pass
+## Completed: Scaffolding + Downloader (tasks c9d2, e7a6)
 
-**Completed:** Create test file structure (task-1773380828-cfc1)
+Implemented all foundational modules. CLI works with --dry-run, --all, --dataset, argument validation.
+Downloader has full resume/retry/checksum logic. State tracking round-trips correctly.
+.gitignore needed `!src/data/` to override the `data/` pattern.
 
-Created tests/test_dilated_convolutions.py with:
-- TestReceptiveFieldCalculation: 2 test stubs for RF formula
-- TestModelInitialization: 4 test stubs for various configs (default, custom, too short, too long)
-- TestIntegration: 4 test stubs for forward pass, causality, generation
-- Total: 10 test methods ready for implementation
+Remaining tasks:
+- task-1773465388-fd1a: Auto-download datasets (PHENICX, Edinburgh, AIST++)
+- task-1773465388-1256: Semi-manual datasets (MOSA, URMP)
+- task-1773465388-281e: README generation and manual instructions
+- task-1773465388-3cab: Wire CLI main() and dry-run support
 
-**Next Task:** Implement receptive field calculation tests (task-1773380832-e56d)
+Note: README generation and CLI wiring are already mostly done in the scaffolding.
+The readme.py and main() dispatch are functional. Tasks 281e and 3cab may just need
+verification/polish rather than full implementation.
 
-**Key Formula:**
-- Receptive field: RF = 1 + 2 * sum(dilations)
-- Frame duration: FRAME_STEP / SAMPLE_RATE * 1000 ms
-- Expected: 15 frames (~174ms) with [1, 2, 4]
+## 2026-03-13: Implementing Auto-Download Datasets (task fd1a)
 
-**Completed:** Implement receptive field calculation tests (task-1773380832-e56d)
+Picking task-1773465388-fd1a: Auto-download datasets (PHENICX, Edinburgh, AIST++).
 
-Implemented 2 tests in TestReceptiveFieldCalculation:
-1. test_rf_formula_default: Verifies RF = 15 with default [1,2,4] dilations
-2. test_rf_formula_custom: Verifies formula with [1,1,1] (RF=7) and [2,4,8] (RF=29)
+Analysis of each dataset's download approach:
 
-Both tests pass. Formula validated: RF = 1 + 2 * sum(dilations)
+1. **PHENICX**: URLs in config point to RepoVizz pages, not direct downloads. The spec says
+   "scrape RepoVizz datapack links from UPF page". However, RepoVizz may be unreliable/down.
+   Pragmatic approach: try downloading from the configured URLs. If they're HTML pages rather
+   than direct files, fall back to printing manual instructions. The config already has
+   manual_instructions as fallback.
 
-**Next:** Implement model initialization tests (task-1773380837-dc90) - now unblocked
+2. **Edinburgh**: Single zip from DataShare: `https://datashare.ed.ac.uk/download/DS_10283_2223.zip`.
+   Download zip, extract C3D files. Straightforward.
 
-**Completed:** Implement model initialization tests (task-1773380837-dc90)
+3. **AIST++**: Google's download page. The actual data files are hosted on Google Cloud Storage.
+   Need to download motion annotations (SMPL, keypoints) from known URLs. The page lists
+   specific download links for different data types.
 
-Implemented 4 tests in TestModelInitialization:
-1. test_initialization_default: Verifies model creates with default [1,2,4] dilations and has conv1, conv2, conv_head attributes
-2. test_initialization_custom: Verifies model accepts custom dilation rates [2,4,8] via monkeypatch
-3. test_dilation_list_too_short: Verifies warning logged when list has <3 elements (e.g., [1,2])
-4. test_dilation_list_too_long: Verifies warning logged when list has >3 elements (e.g., [1,2,4,8,16])
+For all three: use the existing `download_file`/`download_files` from downloader.py.
+Edinburgh needs zip extraction. PHENICX and AIST++ need specific URL lists.
 
-Key implementation details:
-- Used monkeypatch to inject CONV_DILATION_RATES into model module (not config module, since model imports at module level)
-- Used caplog.set_level(logging.WARNING) to capture logging output
-- All 4 tests pass, bringing total to 6/10 tests implemented (2 RF + 4 init)
+Key decision: Since these are real URLs that may change/break, the download functions should
+be robust — catch errors, log clearly, and not crash the whole tool. The existing downloader
+already has retry logic.
 
-**Next:** Implement integration tests (task-1773380840-ac5b) - now unblocked
+For AIST++, the actual download URLs from Google are:
+- Annotations: `https://storage.googleapis.com/aist_plusplus_public/...`
+- The download page lists specific files. I'll use known URLs from the research.
 
-**Completed:** Implement integration tests (task-1773380840-ac5b)
+Implementation plan:
+- PHENICX: download from configured URLs, create subdirectories
+- Edinburgh: download zip, extract with zipfile module
+- AIST++: download annotation files from Google Cloud Storage URLs
 
-Implemented 4 integration tests in TestIntegration:
-1. test_output_shape_unchanged: Verifies model I/O shape consistency with GROUPED_MEL_DIM (320)
-2. test_causality_preserved: Verifies causal attention by comparing full vs truncated sequences
-3. test_forward_pass_no_errors: Verifies forward pass produces valid outputs (no NaN/Inf)
-4. test_generation_works: Verifies autoregressive generation with seed [T,80] -> output [num_frames,80]
+## Completed: Auto-download datasets (task fd1a)
 
-Key learnings:
-- Model now uses GROUPED_MEL_DIM (320) for I/O due to reduction factor R=4
-- generate() expects [T, N_MELS] without batch dimension
-- All 10 tests pass (2 RF + 4 init + 4 integration)
+Implemented all 3 auto-download functions. Key findings:
+- PHENICX RepoVizz platform is dead (404). UPF page returns 403. Function handles both gracefully.
+- Edinburgh DOI resolves to handle 2913 (not 2223 as originally in config). Fixed URL.
+- AIST++ files are on public GCS bucket, direct download works.
+- End-to-end tested with AIST++ cameras.zip (21KB).
 
-**Next Task:** Run test suite and verify all pass (task-1773380843-7422) - now unblocked
+Remaining tasks:
+- task-1773465388-1256: Semi-manual datasets (MOSA, URMP)
+- task-1773465388-281e: README generation and manual instructions
+- task-1773465388-3cab: Wire CLI main() and dry-run support
 
+## 2026-03-13: Implementing Semi-Manual Datasets (task 1256)
 
-**Completed:** Run test suite and verify all pass (task-1773380843-7422)
+Picking task-1773465388-1256: Semi-manual datasets (MOSA, URMP).
 
-Verification results:
-- ✅ All 10 dilated convolution tests pass (2 RF + 4 init + 4 integration)
-- ✅ All 4 existing model tests pass (no regressions)
-- Total test time: ~23 seconds
+Analysis:
 
-**Objective Complete:**
-Dilated causal convolutions fully implemented and tested:
-1. ✅ Config: CONV_DILATION_RATES = [1, 2, 4]
-2. ✅ Model: MelGenerator uses dilations in CausalConvBlocks
-3. ✅ Receptive field: Increased from 5 frames (~58ms) to 15 frames (~174ms)
-4. ✅ Logging: Initialization logs dilation rates and receptive field
-5. ✅ Tests: Comprehensive test suite with 10 tests covering RF calculation, initialization, and integration
+1. **MOSA**: Zenodo record 11393449, restricted, ~2.3 TB. Use `zenodo_get` as subprocess
+   (spec says to use it). Need to:
+   - Check `zenodo_get` is installed (ImportError/subprocess check)
+   - Check disk space (shutil.disk_usage, warn if < 2.5 TB free)
+   - Invoke: `zenodo_get -r 11393449 -o dest/ -k` with ZENODO_TOKEN env var
+   - Without token: print manual_instructions from config
+   - zenodo_get uses ZENODO_TOKEN env var for auth on restricted records
 
-All acceptance criteria met. Ready for training.
+2. **URMP**: User provides URL after Google Form. ~12.5 GB.
+   - If URL provided: download with our downloader, extract if zip
+   - Without URL: print manual_instructions from config
+
+Both follow the pattern from download_auto.py — use existing downloader infrastructure.
+The CLI already dispatches to download_mosa/download_urmp with the right args.
+
+## Completed: Semi-manual datasets (task 1256)
+
+Implemented download_mosa() and download_urmp() in download_semi.py.
+- MOSA: zenodo_get subprocess with ZENODO_TOKEN env, disk space check, graceful errors
+- URMP: download_file + zip extraction, graceful errors without URL
+- Both print manual_instructions when credentials missing
+- End-to-end tested: URMP with real zip download, MOSA error paths verified
+- CLI dry-run and dispatch both work correctly
+
+Remaining tasks:
+- task-1773465388-281e: README generation and manual instructions
+- task-1773465388-3cab: Wire CLI main() and dry-run support
+
+## 2026-03-13: Final verification and completion
+
+Verified remaining tasks (281e: README generation, 3cab: CLI wiring) were already fully
+implemented during scaffolding (commit 15fff56). Comprehensive verification:
+
+- `--dry-run --all`: Shows all 6 datasets with correct status labels
+- `--dry-run --dataset human36m`: Shows manual dataset correctly
+- `--dataset human36m`: Prints instructions to stdout, writes README
+- README includes per-dataset status, descriptions, and manual instructions
+- CLI dispatches to all download functions (auto, semi-manual, manual)
+- State tracking works (skips completed datasets, marks failures)
+- All modules import correctly, registry has all 6 datasets
+
+All 6 tasks closed. Objective complete.

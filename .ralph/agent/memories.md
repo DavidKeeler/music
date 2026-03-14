@@ -2,6 +2,18 @@
 
 ## Patterns
 
+### mem-1773466567-2d45
+> Semi-manual downloads: MOSA uses zenodo_get subprocess with ZENODO_TOKEN env var, -r 11393449 -o dest -k flags. Checks shutil.which() for availability, shutil.disk_usage() for 2.5TB threshold. URMP uses existing download_file() with user URL, auto-extracts zips via zipfile.is_zipfile(). Both print manual_instructions and raise RuntimeError when credentials missing.
+<!-- tags: dataset-download, semi-manual | created: 2026-03-14 -->
+
+### mem-1773466383-cd9d
+> Auto-download implementations: PHENICX scrapes RepoVizz links from UPF page but platform is dead (404), raises RuntimeError with manual_instructions. Edinburgh downloads single zip from datashare.ed.ac.uk/download/DS_10283_2913.zip (~498MB), extracts C3D files. AIST++ downloads 3 zips from storage.googleapis.com/aist_plusplus_public/20210308/ (motions 306MB, keypoints3d 834MB, cameras 19KB). All use zipfile.extractall() then delete zip. DOI 10.7488/ds/2223 resolves to handle 10283/2913 not 2223.
+<!-- tags: dataset-download, auto-download | created: 2026-03-14 -->
+
+### mem-1773466124-cce9
+> src/data/ module structure: download_datasets.py (CLI entry), datasets.py (DatasetConfig registry, 6 datasets), state.py (.download_state.json), downloader.py (HTTP resume/retry/checksum), download_auto.py (phenicx/edinburgh/aist++), download_semi.py (mosa/urmp), readme.py (README generation). .gitignore needed !src/data/ to override data/ pattern.
+<!-- tags: dataset-download, structure | created: 2026-03-14 -->
+
 ### mem-1773382671-79f8
 > Integration tests for dilated convolutions: test_output_shape_unchanged uses GROUPED_MEL_DIM (320) not N_MELS (80) for model I/O. test_causality_preserved compares full vs truncated sequence outputs. test_generation_works uses [T,N_MELS] seed without batch dim. All 10 tests pass.
 <!-- tags: testing, dilated-convolutions, tensorflow | created: 2026-03-13 -->

@@ -302,7 +302,11 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
         model.load_weights(resume_from)
     elif checkpoint_path.exists():
         print(f"Auto-resuming from {checkpoint_path}")
-        model.load_weights(str(checkpoint_path))
+        try:
+            model.load_weights(str(checkpoint_path))
+        except (ValueError, Exception) as e:
+            print(f"⚠ Could not load checkpoint (architecture changed?): {e}")
+            print("Training from scratch.")
     
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(str(checkpoint_path), save_weights_only=False, save_freq='epoch'),
