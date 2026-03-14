@@ -43,8 +43,9 @@ tensorboard/
 *.wav
 *.mp3
 *.flac
-data/
+/data/
 cache/
+!src/data/
 
 # Models
 models/
