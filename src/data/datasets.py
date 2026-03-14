@@ -37,8 +37,8 @@ DATASETS: dict[str, DatasetConfig] = {
         target_dir="edinburgh",
         access_tier="auto",
         description="54 C3D motion capture recordings of 6 professional conductors. DOI: 10.7488/ds/2223.",
-        urls=["https://datashare.ed.ac.uk/download/DS_10283_2223.zip"],
-        manual_instructions="Download from https://datashare.ed.ac.uk/handle/10283/2223",
+        urls=["https://datashare.ed.ac.uk/download/DS_10283_2913.zip"],
+        manual_instructions="Download from https://datashare.ed.ac.uk/handle/10283/2913",
     ),
     "aist-plusplus": DatasetConfig(
         name="aist-plusplus",
@@ -46,7 +46,11 @@ DATASETS: dict[str, DatasetConfig] = {
         target_dir="aist-plusplus",
         access_tier="auto",
         description="3D dance motion + music from Google. 5.2 hrs, 1408 sequences, 10 genres (CC BY 4.0).",
-        urls=["https://google.github.io/aistplusplus_dataset/download.html"],
+        urls=[
+            "https://storage.googleapis.com/aist_plusplus_public/20210308/motions.zip",
+            "https://storage.googleapis.com/aist_plusplus_public/20210308/keypoints3d.zip",
+            "https://storage.googleapis.com/aist_plusplus_public/20210308/cameras.zip",
+        ],
         manual_instructions="Download from https://google.github.io/aistplusplus_dataset/download.html",
     ),
     "mosa": DatasetConfig(
