@@ -8,22 +8,30 @@ throughout the codebase.
 from pathlib import Path
 
 # Audio Processing Parameters
-# 22.05kHz sample rate for music generation
-SAMPLE_RATE = 22050
-# Number of mel frequency bins
-N_MELS = 80
+# 24kHz sample rate (matches Vocos vocoder)
+SAMPLE_RATE = 24000
+# Number of mel frequency bins (matches Vocos 24kHz)
+N_MELS = 100
 # STFT window length in samples
 FRAME_LENGTH = 1024
-# STFT hop length in samples (256 samples = ~11.6ms at 22.05kHz)
+# STFT hop length in samples (256 samples = ~10.7ms at 24kHz)
 FRAME_STEP = 256
 
-# LJSpeech Mel Parameters (for pretrained vocoder compatibility)
-LJSPEECH_SAMPLE_RATE = 22050
-LJSPEECH_HOP_LENGTH = 256
-LJSPEECH_N_FFT = 1024
-LJSPEECH_N_MELS = 80
-LJSPEECH_F_MIN = 0.0
-LJSPEECH_F_MAX = 8000.0
+# Vocos Mel Parameters (for pretrained vocoder compatibility)
+VOCOS_SAMPLE_RATE = 24000
+VOCOS_HOP_LENGTH = 256
+VOCOS_N_FFT = 1024
+VOCOS_N_MELS = 100
+VOCOS_F_MIN = 0.0
+VOCOS_F_MAX = 12000.0
+
+# Legacy LJSpeech aliases (kept for any remaining references)
+LJSPEECH_SAMPLE_RATE = VOCOS_SAMPLE_RATE
+LJSPEECH_HOP_LENGTH = VOCOS_HOP_LENGTH
+LJSPEECH_N_FFT = VOCOS_N_FFT
+LJSPEECH_N_MELS = VOCOS_N_MELS
+LJSPEECH_F_MIN = VOCOS_F_MIN
+LJSPEECH_F_MAX = VOCOS_F_MAX
 
 # Vocoder Training Parameters
 VOCODER_SEGMENT_LENGTH = 8192
@@ -40,11 +48,15 @@ NUM_LAYERS = 3
 # Effective sequence length = SEQ_LEN / REDUCTION_FACTOR = 512 / 4 = 128
 WINDOW_SIZES = [32, 64, 128]
 
+# Latent Conditioning (VAE)
+LATENT_DIM = 64
+KL_BETA = 0.005
+
 # Dilated Convolution Configuration
-# Dilation rates for conv1, conv2, conv_head layers
-# Progressive dilation increases receptive field: 1 + 2*sum(rates) frames
-# Default [1, 2, 4] gives 15 frames (~174ms at 22.05kHz with hop=256)
-CONV_DILATION_RATES = [1, 2, 4]
+# Dilation rates for causal conv layers (one CausalConvBlock per rate)
+# Receptive field = 1 + 2*sum(rates) frames
+# Default [1, 2, 4, 8, 16] gives 63 frames (~672ms at 24kHz with hop=256)
+CONV_DILATION_RATES = [1, 2, 4, 8, 16]
 
 # Training Parameters
 # Batch size for training (reduced to 4 for memory optimization)
@@ -63,7 +75,7 @@ REDUCTION_FACTOR = 4
 # Effective sequence length after grouping frames
 EFFECTIVE_SEQ_LEN = SEQ_LEN // REDUCTION_FACTOR  # 512 // 4 = 128
 # Grouped mel dimension (R frames concatenated)
-GROUPED_MEL_DIM = N_MELS * REDUCTION_FACTOR  # 80 * 4 = 320
+GROUPED_MEL_DIM = N_MELS * REDUCTION_FACTOR  # 100 * 4 = 400
 
 # Teacher Forcing Schedule Parameters
 # Initial teacher forcing ratio (1.0 = always use ground truth)
