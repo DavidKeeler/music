@@ -2,9 +2,10 @@
 
 import tensorflow as tf
 from pathlib import Path
-from .model import MelGenerator
+from .model import MelGenerator, LatentEncoder
 from .vocoder import load_pretrained_vocoder, load_vocoder_from_checkpoint
 from .audio_utils import MelNormalizer
+from .config import LATENT_DIM
 
 
 class MusicGenerationModel(tf.keras.Model):
@@ -51,7 +52,8 @@ class MusicGenerationModel(tf.keras.Model):
         self,
         seed_mel: tf.Tensor,
         num_frames: int,
-        temperature: float = 1.0
+        temperature: float = 1.0,
+        z: tf.Tensor = None
     ) -> tf.Tensor:
         """Generate audio from seed mel spectrogram.
         
@@ -59,13 +61,17 @@ class MusicGenerationModel(tf.keras.Model):
             seed_mel: Seed mel spectrogram [time, 80]
             num_frames: Number of mel frames to generate
             temperature: Sampling temperature
+            z: Optional latent vector [1, latent_dim]. If None, sampled from N(0,1).
             
         Returns:
             Generated audio waveform [samples]
         """
+        if z is None:
+            z = tf.random.normal([1, LATENT_DIM])
+        
         # Generate mel frames autoregressively
         generated_mel = self.mel_generator.generate(
-            seed_mel, num_frames, temperature
+            seed_mel, num_frames, temperature, z=z
         )  # [num_frames, 80]
         
         # Transform to vocoder format: [num_frames, 80] -> [1, num_frames, 80]

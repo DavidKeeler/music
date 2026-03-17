@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1773761557-5bfc
+> MelGenerator conv stack refactored: self.conv_layers = [CausalConvBlock(..., dilation_rate=d) for d in CONV_DILATION_RATES]. All convs before transformers, no post-transformer conv_head. CONV_DILATION_RATES=[1,2,4,8,16] gives RF=63 frames (~672ms). No padding/truncation logic. Arbitrary rates supported.
+<!-- tags: dilated-convolutions, model, tensorflow | created: 2026-03-17 -->
+
 ### mem-1773504805-a639
 > generate_dataset.py: CLI entry point wiring beat_analyzer, conducting_patterns, skeleton_builder, dataset_writer. process_file() loads audio, computes mel, analyzes beats, windows into sample_duration chunks, generates variations per window. Seed: base_seed + file_idx * variations_per_file + var_idx + win_idx. _slice_beat_info() offsets beat times to window-relative. Outputs one .tfrecord per input file. All 5 acceptance criteria verified: TFRecord output, [17,3] keypoints, determinism, ts override, seed variation.
 <!-- tags: generate-dataset, cli, dataset-generator | created: 2026-03-14 -->

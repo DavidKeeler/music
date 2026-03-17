@@ -1,19 +1,40 @@
-# Beat Signature Dataset Generator - Scratchpad
+# Deeper Dilated Conv Refactor
 
-## 2026-03-14 Iteration: generate_dataset.py CLI entry point
+## Understanding
 
-### What was done
-- Task `task-1773469039-553a` was the last remaining task (blocker `task-1773469030-5217` already closed)
-- The file already existed from a previous iteration but was untracked in git
-- Removed dead `_parse_time_signature` function (duplicated from beat_analyzer.py, never called)
-- Verified all 5 acceptance criteria end-to-end with synthetic wav:
-  1. TFRecords written with paired mel/keypoint samples ✓
-  2. Keypoints shape [17, 3], (y, x, confidence), confidence=1.0 ✓
-  3. Deterministic: identical MD5 hashes with same seed ✓
-  4. --time_signature 3/4 override forces 3/4 pattern ✓
-  5. Different seeds produce different trajectories ✓
-- Committed as `c6e159b`
-- All tasks closed
+Current state:
+- `config.py`: `CONV_DILATION_RATES = [1, 2, 4]` (3 elements)
+- `model.py`: Hardcoded `self.conv1`, `self.conv2`, `self.conv_head` with padding/truncation logic
+- `conv1` and `conv2` run before transformers, `conv_head` runs after transformers
+- Tests check for `conv1`, `conv2`, `conv_head` attributes and warn on list length mismatch
 
-### Status
-All tasks for the beat-signature dataset generator objective are complete.
+Target state:
+- `config.py`: `CONV_DILATION_RATES = [1, 2, 4, 8, 16]` (5 elements)
+- `model.py`: Dynamic `self.conv_layers` list, all before transformers, no padding/truncation/warnings
+- Tests updated to check `conv_layers` list, no length mismatch tests needed
+
+## Plan
+
+Single task: config change + model refactor + test update. It's all one cohesive change.
+
+Key changes:
+1. config.py: Update CONV_DILATION_RATES and comment
+2. model.py __init__: Replace conv1/conv2/conv_head with conv_layers loop, simplify RF logging, remove padding/warnings
+3. model.py call(): Replace individual conv calls with loop, all before transformers
+4. model.py docstring: Update architecture description
+5. tests: Update to check conv_layers, remove too_short/too_long tests, add arbitrary rates test
+
+## Iteration 1 - Complete
+
+All changes implemented and committed:
+1. config.py: CONV_DILATION_RATES = [1, 2, 4, 8, 16], updated comment
+2. model.py: self.conv_layers dynamic list, loop in call(), simplified RF logging, removed padding/truncation/warnings
+3. tests: Updated for conv_layers, added arbitrary rates test, RF logging test, removed too_short/too_long tests
+4. All 11 dilated conv tests pass. 30 pre-existing failures from parallel loop (N_MELS 80→100 mismatch in other test files).
+
+All 5 acceptance criteria met:
+- ✅ 5 CausalConvBlock instances with matching dilation rates
+- ✅ Output shape [B, 128, 400] preserved, all convs before transformers
+- ✅ Log shows 63 frames ~672.0 ms
+- ✅ Arbitrary rates work with no errors
+- ✅ generate() works with correct output shape

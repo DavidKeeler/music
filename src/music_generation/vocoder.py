@@ -40,7 +40,7 @@ class GriffinLimVocoder:
         mel_np = mel.numpy()
         
         # Handle shape: ensure [batch, mel_bins, time]
-        if mel_np.ndim == 3 and mel_np.shape[2] == 80:
+        if mel_np.ndim == 3 and mel_np.shape[2] == 100:
             # [batch, time, 80] -> [batch, 80, time]
             mel_np = np.transpose(mel_np, (0, 2, 1))
         
@@ -54,7 +54,7 @@ class GriffinLimVocoder:
             # Convert mel to STFT magnitude
             stft = librosa.feature.inverse.mel_to_stft(
                 mel_linear,
-                sr=22050,
+                sr=24000,
                 n_fft=self.n_fft,
                 power=1.0
             )
@@ -190,7 +190,7 @@ def load_pretrained_vocoder(
         try:
             from .vocos_wrapper import load_vocos_vocoder
             if model_name is None:
-                model_name = "charactr/vocos-mel-22khz"
+                model_name = "charactr/vocos-mel-24khz"
             return load_vocos_vocoder(model_name=model_name)
         except (ImportError, Exception) as e:
             if not enable_fallback:

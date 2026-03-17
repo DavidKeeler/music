@@ -9,10 +9,10 @@ from .config import (
     DATA_DIR, CACHE_DIR, CHECKPOINT_DIR,
     BATCH_SIZE, SEQ_LEN, LEARNING_RATE, NUM_EPOCHS,
     INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS, MAX_CONTEXT_FRAMES,
-    GROUPED_MEL_DIM
+    GROUPED_MEL_DIM, KL_BETA
 )
 from .dataset import create_dataset
-from .model import MelGenerator
+from .model import MelGenerator, LatentEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -103,9 +103,12 @@ class MelGeneratorTraining(tf.keras.Model):
     """Simplified training wrapper with parallel processing."""
     
     def __init__(self, base_model, initial_tf_ratio=INITIAL_TF_RATIO, 
-                 min_tf_ratio=MIN_TF_RATIO, decay_k=TF_DECAY_K, warmup_steps=TF_WARMUP_STEPS):
+                 min_tf_ratio=MIN_TF_RATIO, decay_k=TF_DECAY_K, warmup_steps=TF_WARMUP_STEPS,
+                 kl_beta=KL_BETA):
         super().__init__()
         self.base_model = base_model
+        self.latent_encoder = LatentEncoder()
+        self.kl_beta = kl_beta
         
         # Teacher forcing schedule parameters
         self.initial_tf_ratio = initial_tf_ratio
@@ -117,8 +120,10 @@ class MelGeneratorTraining(tf.keras.Model):
         self.tf_ratio = tf.Variable(initial_tf_ratio, trainable=False, dtype=tf.float32, name="tf_ratio")
         self.training_step = tf.Variable(0, trainable=False, dtype=tf.int64, name="training_step")
         
-        # Metric for logging
+        # Metrics for logging
         self.tf_ratio_metric = tf.keras.metrics.Mean(name="tf_ratio")
+        self.mel_loss_metric = tf.keras.metrics.Mean(name="mel_loss")
+        self.kl_loss_metric = tf.keras.metrics.Mean(name="kl_loss")
     
     def update_tf_ratio(self):
         """Update teacher forcing ratio based on current training step."""
@@ -138,12 +143,13 @@ class MelGeneratorTraining(tf.keras.Model):
         self.training_step.assign_add(1)
     
     def call(self, inputs, training=False):
-        return self.base_model(inputs, training=training)
+        z, _, _ = self.latent_encoder(inputs, training=training)
+        return self.base_model(inputs, z=z, training=training)
     
     @property
     def metrics(self):
         """Return metrics for auto-reset between epochs."""
-        return [self.tf_ratio_metric]
+        return [self.tf_ratio_metric, self.mel_loss_metric, self.kl_loss_metric]
     
     def get_config(self):
         """Return config for serialization."""
@@ -152,7 +158,8 @@ class MelGeneratorTraining(tf.keras.Model):
             "initial_tf_ratio": float(self.initial_tf_ratio),
             "min_tf_ratio": float(self.min_tf_ratio),
             "decay_k": float(self.decay_k),
-            "warmup_steps": int(self.warmup_steps)
+            "warmup_steps": int(self.warmup_steps),
+            "kl_beta": float(self.kl_beta)
         }
     
     @classmethod
@@ -164,43 +171,55 @@ class MelGeneratorTraining(tf.keras.Model):
             initial_tf_ratio=config.get("initial_tf_ratio", INITIAL_TF_RATIO),
             min_tf_ratio=config.get("min_tf_ratio", MIN_TF_RATIO),
             decay_k=config.get("decay_k", TF_DECAY_K),
-            warmup_steps=config.get("warmup_steps", TF_WARMUP_STEPS)
+            warmup_steps=config.get("warmup_steps", TF_WARMUP_STEPS),
+            kl_beta=config.get("kl_beta", KL_BETA)
         )
     
+    def _compute_kl_loss(self, z_mean, z_logvar):
+        """KL divergence: KL(q(z|x) || N(0,1))."""
+        return -0.5 * tf.reduce_mean(1.0 + z_logvar - tf.square(z_mean) - tf.exp(z_logvar))
+
     def _pure_teacher_forcing(self, x, y):
         """Single forward pass with ground truth."""
         with tf.GradientTape() as tape:
-            preds = self.base_model(x, training=True)
+            z, z_mean, z_logvar = self.latent_encoder(x, training=True)
+            preds = self.base_model(x, z=z, training=True)
             
             # Compute per-frame loss: reshape [B, T/R, R*80] -> [B, T/R, R, 80]
-            # to compute loss independently for each of R frames
             from .config import REDUCTION_FACTOR, N_MELS
-            preds_shifted = preds[:, :-1, :]  # [B, T/R-1, R*80]
-            targets_shifted = y[:, 1:, :]     # [B, T/R-1, R*80]
+            preds_shifted = preds[:, :-1, :]
+            targets_shifted = y[:, 1:, :]
             
-            # Reshape to separate R frames
             batch_size = tf.shape(preds_shifted)[0]
             seq_len = tf.shape(preds_shifted)[1]
             preds_frames = tf.reshape(preds_shifted, [batch_size, seq_len, REDUCTION_FACTOR, N_MELS])
             target_frames = tf.reshape(targets_shifted, [batch_size, seq_len, REDUCTION_FACTOR, N_MELS])
             
-            # Compute MSE per frame and average across all dimensions
-            loss = tf.reduce_mean(tf.square(preds_frames - target_frames))
+            mel_loss = tf.reduce_mean(tf.square(preds_frames - target_frames))
+            kl_loss = self._compute_kl_loss(z_mean, z_logvar)
+            loss = mel_loss + self.kl_beta * kl_loss
         
-        grads = tape.gradient(loss, self.base_model.trainable_variables)
+        trainable_vars = self.base_model.trainable_variables + self.latent_encoder.trainable_variables
+        grads = tape.gradient(loss, trainable_vars)
         grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
-        self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
+        self.optimizer.apply_gradients(zip(grads, trainable_vars))
         self.tf_ratio_metric.update_state(self.tf_ratio)
+        self.mel_loss_metric.update_state(mel_loss)
+        self.kl_loss_metric.update_state(kl_loss)
         
-        return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
+        return {"loss": loss, "mel_loss": self.mel_loss_metric.result(), "kl_loss": self.kl_loss_metric.result(),
+                "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
     
     def _parallel_scheduled_sampling(self, x, y):
         """Two-pass parallel scheduled sampling."""
         batch_size = tf.shape(x)[0]
         seq_len = tf.shape(x)[1]
         
+        # Encode z from ground truth (no gradients for pass 1)
+        z_pass1, _, _ = self.latent_encoder(x, training=False)
+        
         # Pass 1: Get predictions (no gradients)
-        preds_pass1 = self.base_model(x, training=False)
+        preds_pass1 = self.base_model(x, z=z_pass1, training=False)
         
         # Sample and mix
         use_teacher = tf.random.uniform([batch_size, seq_len, 1]) < self.tf_ratio
@@ -209,29 +228,33 @@ class MelGeneratorTraining(tf.keras.Model):
         
         # Pass 2: Train with mixed input
         with tf.GradientTape() as tape:
-            preds_pass2 = self.base_model(mixed_input, training=True)
+            z, z_mean, z_logvar = self.latent_encoder(mixed_input, training=True)
+            preds_pass2 = self.base_model(mixed_input, z=z, training=True)
             
-            # Compute per-frame loss: reshape [B, T/R, R*80] -> [B, T/R, R, 80]
-            # to compute loss independently for each of R frames
+            # Compute per-frame loss
             from .config import REDUCTION_FACTOR, N_MELS
-            preds_shifted_loss = preds_pass2[:, :-1, :]  # [B, T/R-1, R*80]
-            targets_shifted = y[:, 1:, :]                # [B, T/R-1, R*80]
+            preds_shifted_loss = preds_pass2[:, :-1, :]
+            targets_shifted = y[:, 1:, :]
             
-            # Reshape to separate R frames
             batch_size_loss = tf.shape(preds_shifted_loss)[0]
             seq_len_loss = tf.shape(preds_shifted_loss)[1]
             preds_frames = tf.reshape(preds_shifted_loss, [batch_size_loss, seq_len_loss, REDUCTION_FACTOR, N_MELS])
             target_frames = tf.reshape(targets_shifted, [batch_size_loss, seq_len_loss, REDUCTION_FACTOR, N_MELS])
             
-            # Compute MSE per frame and average across all dimensions
-            loss = tf.reduce_mean(tf.square(preds_frames - target_frames))
+            mel_loss = tf.reduce_mean(tf.square(preds_frames - target_frames))
+            kl_loss = self._compute_kl_loss(z_mean, z_logvar)
+            loss = mel_loss + self.kl_beta * kl_loss
         
-        grads = tape.gradient(loss, self.base_model.trainable_variables)
+        trainable_vars = self.base_model.trainable_variables + self.latent_encoder.trainable_variables
+        grads = tape.gradient(loss, trainable_vars)
         grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
-        self.optimizer.apply_gradients(zip(grads, self.base_model.trainable_variables))
+        self.optimizer.apply_gradients(zip(grads, trainable_vars))
         self.tf_ratio_metric.update_state(self.tf_ratio)
+        self.mel_loss_metric.update_state(mel_loss)
+        self.kl_loss_metric.update_state(kl_loss)
         
-        return {"loss": loss, "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
+        return {"loss": loss, "mel_loss": self.mel_loss_metric.result(), "kl_loss": self.kl_loss_metric.result(),
+                "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
     
     def train_step(self, data):
         """Training step with parallel processing."""
@@ -275,7 +298,6 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
     base_model = MelGenerator()
     model = MelGeneratorTraining(base_model)
     model.compile(optimizer=optimizer)
-    model.summary()
     
     # Verify model builds correctly with sample batch
     print("Verifying model build with sample batch...")
@@ -292,6 +314,8 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
         except Exception as e:
             print(f"✗ Model build verification failed: {e}")
             raise
+    
+    model.summary(expand_nested=True)
     
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)

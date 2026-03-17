@@ -10,6 +10,13 @@ from .config import (
     N_MELS,
     FRAME_LENGTH,
     FRAME_STEP,
+    VOCOS_SAMPLE_RATE,
+    VOCOS_HOP_LENGTH,
+    VOCOS_N_FFT,
+    VOCOS_N_MELS,
+    VOCOS_F_MIN,
+    VOCOS_F_MAX,
+    # Legacy aliases
     LJSPEECH_SAMPLE_RATE,
     LJSPEECH_HOP_LENGTH,
     LJSPEECH_N_FFT,
@@ -71,7 +78,7 @@ def audio_to_mel(waveform: tf.Tensor) -> tf.Tensor:
         num_spectrogram_bins=FRAME_LENGTH // 2 + 1,
         sample_rate=SAMPLE_RATE,
         lower_edge_hertz=0.0,
-        upper_edge_hertz=SAMPLE_RATE / 2.0
+        upper_edge_hertz=12000.0
     )
     
     mel = tf.matmul(magnitude, mel_matrix)
@@ -117,31 +124,31 @@ def denormalize_mel(mel: tf.Tensor, mean: float, std: float) -> tf.Tensor:
 
 
 def audio_to_mel_ljspeech(waveform: tf.Tensor) -> tf.Tensor:
-    """Convert audio to mel using LJSpeech-compatible parameters.
+    """Convert audio to mel using Vocos-compatible parameters.
     
-    Uses TensorFlow signal processing with LJSpeech parameters
-    for compatibility with pretrained HiFi-GAN vocoder.
+    Uses TensorFlow signal processing with Vocos 24kHz parameters
+    for compatibility with pretrained Vocos vocoder.
     
     Args:
-        waveform: 1D tensor of audio samples at 22050 Hz
+        waveform: 1D tensor of audio samples at 24000 Hz
         
     Returns:
-        2D tensor [time, n_mels] (time_frames x 80)
+        2D tensor [time, n_mels] (time_frames x 100)
     """
     stft = tf.signal.stft(
         waveform,
-        frame_length=LJSPEECH_N_FFT,
-        frame_step=LJSPEECH_HOP_LENGTH,
+        frame_length=VOCOS_N_FFT,
+        frame_step=VOCOS_HOP_LENGTH,
         pad_end=True
     )
     magnitude = tf.abs(stft)
     
     mel_matrix = tf.signal.linear_to_mel_weight_matrix(
-        num_mel_bins=LJSPEECH_N_MELS,
-        num_spectrogram_bins=LJSPEECH_N_FFT // 2 + 1,
-        sample_rate=LJSPEECH_SAMPLE_RATE,
-        lower_edge_hertz=LJSPEECH_F_MIN,
-        upper_edge_hertz=LJSPEECH_F_MAX
+        num_mel_bins=VOCOS_N_MELS,
+        num_spectrogram_bins=VOCOS_N_FFT // 2 + 1,
+        sample_rate=VOCOS_SAMPLE_RATE,
+        lower_edge_hertz=VOCOS_F_MIN,
+        upper_edge_hertz=VOCOS_F_MAX
     )
     
     mel = tf.matmul(magnitude, mel_matrix)

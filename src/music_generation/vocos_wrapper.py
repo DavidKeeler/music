@@ -12,7 +12,7 @@ class VocosWrapper:
     Requires: pip install torch vocos
     """
     
-    def __init__(self, model_name: str = "charactr/vocos-mel-22khz"):
+    def __init__(self, model_name: str = "charactr/vocos-mel-24khz"):
         """Initialize Vocos vocoder.
         
         Args:
@@ -46,8 +46,8 @@ class VocosWrapper:
         # Convert to numpy
         mel_np = mel.numpy()
         
-        # Vocos expects [batch, 80, time]
-        if mel_np.shape[-1] == 80:
+        # Vocos expects [batch, 100, time]
+        if mel_np.shape[-1] == 100:
             mel_np = np.transpose(mel_np, (0, 2, 1))
         
         # Convert to PyTorch
@@ -62,7 +62,7 @@ class VocosWrapper:
         return tf.constant(audio_np, dtype=tf.float32)
 
 
-def load_vocos_vocoder(model_name: str = "charactr/vocos-mel-22khz") -> VocosWrapper:
+def load_vocos_vocoder(model_name: str = "charactr/vocos-mel-24khz") -> VocosWrapper:
     """Load pretrained Vocos vocoder.
     
     Args:
