@@ -3,7 +3,7 @@
 import tensorflow as tf
 import pytest
 from src.music_generation.model import MelGenerator
-from src.music_generation.config import GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN, N_MELS
+from src.music_generation.config import N_MELS
 from src.music_generation.layers import CausalConvBlock
 
 
