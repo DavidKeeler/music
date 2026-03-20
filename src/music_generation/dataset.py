@@ -5,7 +5,7 @@ import json
 import logging
 
 from .audio_utils import load_audio, audio_to_mel, normalize_mel
-from .config import SEQ_LEN, REDUCTION_FACTOR, GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN
+from .config import SEQ_LEN, N_MELS, TOKEN_COMPRESSION_RATIO
 
 logger = logging.getLogger(__name__)
 
@@ -129,26 +129,21 @@ class MusicNetDataset:
             mel = self._load_or_compute_mel(audio_file)
             mel_length = mel.shape[0]
             
-            # Truncate to be divisible by REDUCTION_FACTOR
-            truncated_length = mel_length - (mel_length % REDUCTION_FACTOR)
+            # Truncate to be divisible by TOKEN_COMPRESSION_RATIO
+            truncated_length = mel_length - (mel_length % TOKEN_COMPRESSION_RATIO)
             if truncated_length == 0:
                 continue
             mel = mel[:truncated_length]
             
-            # Reshape to grouped frames: [T, 80] → [T/R, R*80]
-            mel_grouped = tf.reshape(mel, [-1, GROUPED_MEL_DIM])
-            grouped_length = mel_grouped.shape[0]
-            
-            # Skip if too short (check against EFFECTIVE_SEQ_LEN)
-            if grouped_length <= EFFECTIVE_SEQ_LEN:
+            # Skip if too short
+            if mel.shape[0] <= SEQ_LEN:
                 continue
             
-            # Generate sequences with stride (on grouped frames)
-            stride = EFFECTIVE_SEQ_LEN // 2
-            for start_frame in range(0, grouped_length - EFFECTIVE_SEQ_LEN, stride):
-                # Extract input and target sequences (1-step offset on grouped frames)
-                input_mel = mel_grouped[start_frame:start_frame + EFFECTIVE_SEQ_LEN]
-                target_mel = mel_grouped[start_frame + 1:start_frame + EFFECTIVE_SEQ_LEN + 1]
+            # Generate sequences with stride on raw mel frames
+            stride = SEQ_LEN // 2
+            for start_frame in range(0, mel.shape[0] - SEQ_LEN, stride):
+                input_mel = mel[start_frame:start_frame + SEQ_LEN]
+                target_mel = mel[start_frame + 1:start_frame + SEQ_LEN + 1]
                 
                 yield input_mel.numpy(), target_mel.numpy()
     
@@ -167,25 +162,30 @@ def create_dataset(data_dir: str, cache_dir: str, batch_size: int, shuffle: bool
         shuffle: Whether to shuffle the dataset
         
     Returns:
-        tf.data.Dataset yielding (input_mel, target_mel) batches
+        Tuple of (tf.data.Dataset, steps_per_epoch).
+        Dataset repeats infinitely; use steps_per_epoch with model.fit().
     """
     dataset_obj = MusicNetDataset(Path(data_dir), Path(cache_dir))
     
-    # Get n_mels from first mel
-    from .config import N_MELS
-    
-    ds = tf.data.Dataset.from_generator(
-        dataset_obj._generator,
-        output_signature=(
-            tf.TensorSpec(shape=(EFFECTIVE_SEQ_LEN, GROUPED_MEL_DIM), dtype=tf.float32),
-            tf.TensorSpec(shape=(EFFECTIVE_SEQ_LEN, GROUPED_MEL_DIM), dtype=tf.float32)
+    def _make_ds():
+        return tf.data.Dataset.from_generator(
+            dataset_obj._generator,
+            output_signature=(
+                tf.TensorSpec(shape=(SEQ_LEN, N_MELS), dtype=tf.float32),
+                tf.TensorSpec(shape=(SEQ_LEN, N_MELS), dtype=tf.float32)
+            )
         )
-    )
     
+    # Count total samples from one pass (uses cached mels)
+    num_samples = _make_ds().reduce(0, lambda count, _: count + 1).numpy()
+    steps_per_epoch = num_samples // batch_size
+    logger.info(f"Dataset: {num_samples} samples, {steps_per_epoch} steps/epoch (batch_size={batch_size})")
+    
+    ds = _make_ds()
     if shuffle:
         ds = ds.shuffle(1000)
-    
+    ds = ds.repeat()
     ds = ds.batch(batch_size)
-    ds = ds.prefetch(2)
+    ds = ds.prefetch(tf.data.AUTOTUNE)
     
-    return ds
+    return ds, steps_per_epoch
