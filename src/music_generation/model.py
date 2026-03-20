@@ -188,15 +188,17 @@ class MelGenerator(tf.keras.Model):
         """Forward pass (parallel processing for training).
         
         Args:
-            mel: Input mel spectrogram [B, T, N_MELS]
+            mel: Input mel spectrogram [B, T, N_MELS] — T can be any length
             z: Optional latent vector [B, latent_dim]. If None, sampled from N(0,1).
             training: Whether in training mode
         
         Returns:
-            Output mel spectrogram [B, T, N_MELS]
+            Output mel spectrogram [B, T, N_MELS] (same T as input)
         """
+        original_T = tf.shape(mel)[1]
         tokens = self.tokenizer(mel, training=training)
-        return self.forward_from_tokens(tokens, z=z, training=training)
+        token_preds = self.forward_tokens(tokens, z=z, training=training)
+        return self.detokenizer(token_preds, target_length=original_T, training=training)
     
     def forward_tokens(self, tokens, z=None, training=False):
         """Token-space forward pass — stops before detokenizer.
@@ -240,29 +242,8 @@ class MelGenerator(tf.keras.Model):
         Returns:
             Output mel spectrogram [B, T_tok * TOKEN_COMPRESSION_RATIO, N_MELS]
         """
-        batch_size = tf.shape(tokens)[0]
-        seq_len = tf.shape(tokens)[1]
-        
-        if z is None:
-            z = tf.random.normal([batch_size, LATENT_DIM])
-        
-        # Latent conditioning in token space
-        z_embed = self.z_proj(z)  # [B, D_MODEL]
-        z_embed = tf.expand_dims(z_embed, axis=1)  # [B, 1, D_MODEL]
-        z_embed = tf.broadcast_to(z_embed, [batch_size, seq_len, D_MODEL])
-        x = tokens + z_embed
-        
-        # Causal conv stack
-        for conv in self.conv_layers:
-            x = conv(x, training=training)
-        
-        # Transformer stack
-        x = self.transformer1(x)
-        x = self.transformer2(x)
-        x = self.transformer3(x)
-        
-        # Detokenize back to mel space
-        return self.detokenizer(x, training=training)
+        token_preds = self.forward_tokens(tokens, z=z, training=training)
+        return self.detokenizer(token_preds, training=training)
     
     def generate(self, seed_mel, num_frames, temperature=1.0, top_p=0.9, z=None):
         """Autoregressive generation in token space.

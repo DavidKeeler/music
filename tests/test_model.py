@@ -23,6 +23,15 @@ def test_forward_different_seq_lengths():
         assert y.shape == (1, seq_len, N_MELS)
 
 
+def test_forward_arbitrary_lengths():
+    """Test forward handles lengths not divisible by TOKEN_COMPRESSION_RATIO."""
+    model = MelGenerator()
+    for seq_len in [1, 5, 13, 63, 100, 510]:
+        x = tf.random.normal([2, seq_len, N_MELS])
+        y = model(x, training=False)
+        assert y.shape == (2, seq_len, N_MELS), f"Failed for seq_len={seq_len}"
+
+
 def test_forward_from_tokens():
     """Test forward_from_tokens produces correct shape."""
     model = MelGenerator()
