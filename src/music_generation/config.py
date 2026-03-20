@@ -81,6 +81,11 @@ TOKEN_NUM_CONV_LAYERS = int(math.log2(TOKEN_COMPRESSION_RATIO))
 # Token sequence length after compression
 TOKEN_SEQ_LEN = SEQ_LEN // TOKEN_COMPRESSION_RATIO  # 512 // 4 = 128
 
+# Backward-compat aliases (removed in Step 7 cleanup)
+REDUCTION_FACTOR = TOKEN_COMPRESSION_RATIO
+GROUPED_MEL_DIM = N_MELS * REDUCTION_FACTOR
+EFFECTIVE_SEQ_LEN = TOKEN_SEQ_LEN
+
 # Teacher Forcing Schedule Parameters
 # Initial teacher forcing ratio (1.0 = always use ground truth)
 INITIAL_TF_RATIO = 1.0

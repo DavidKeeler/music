@@ -5,9 +5,89 @@ from src.music_generation.config import (
     D_MODEL, NUM_HEADS, SEQ_LEN, N_MELS, WINDOW_SIZES,
     REDUCTION_FACTOR, GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN,
     CONV_DILATION_RATES, FRAME_STEP, SAMPLE_RATE,
-    LATENT_DIM
+    LATENT_DIM, TOKEN_COMPRESSION_RATIO, TOKEN_NUM_CONV_LAYERS
 )
-from src.music_generation.layers import CausalConvBlock, TransformerBlock
+from src.music_generation.layers import CausalConvBlock, CausalConv1D, TransformerBlock
+
+
+class MelTokenizer(tf.keras.layers.Layer):
+    """Causal strided Conv1D encoder: [B, T, N_MELS] -> [B, T//C, D_MODEL].
+
+    Uses TOKEN_NUM_CONV_LAYERS successive stride-2 causal convolutions for
+    learned temporal compression. Strict causality via left-padding.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        n = TOKEN_NUM_CONV_LAYERS
+        # Filter progression: N_MELS -> ... -> D_MODEL
+        filters = [
+            N_MELS + (D_MODEL - N_MELS) * (i + 1) // n
+            for i in range(n)
+        ]
+        self.blocks = []
+        for i in range(n):
+            kernel_size = 3
+            padding = kernel_size - 1  # causal left-pad for stride-2
+            conv = tf.keras.layers.Conv1D(
+                filters[i], kernel_size, strides=2, padding='valid'
+            )
+            norm = tf.keras.layers.LayerNormalization()
+            self.blocks.append((padding, conv, norm))
+        self.proj = tf.keras.layers.Dense(D_MODEL)
+
+    def call(self, x, training=False):
+        """Tokenize mel spectrogram.
+
+        Args:
+            x: [B, T, N_MELS] where T is divisible by TOKEN_COMPRESSION_RATIO
+        Returns:
+            [B, T // TOKEN_COMPRESSION_RATIO, D_MODEL]
+        """
+        for padding, conv, norm in self.blocks:
+            x = tf.pad(x, [[0, 0], [padding, 0], [0, 0]])
+            x = conv(x)
+            x = norm(x)
+            x = tf.nn.gelu(x)
+        return self.proj(x)
+
+
+class MelDetokenizer(tf.keras.layers.Layer):
+    """Causal upsampling decoder: [B, T_tok, D_MODEL] -> [B, T_tok*C, N_MELS].
+
+    Uses tf.repeat nearest-neighbor upsampling followed by causal Conv1D.
+    Strict causality preserved throughout.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        n = TOKEN_NUM_CONV_LAYERS
+        # Filter progression: D_MODEL -> ... -> N_MELS (mirrored)
+        filters = [
+            D_MODEL - (D_MODEL - N_MELS) * (i + 1) // n
+            for i in range(n)
+        ]
+        self.blocks = []
+        for i in range(n):
+            conv = CausalConv1D(filters[i], kernel_size=3)
+            norm = tf.keras.layers.LayerNormalization()
+            self.blocks.append((conv, norm))
+        self.proj = tf.keras.layers.Dense(N_MELS)
+
+    def call(self, x, training=False):
+        """Detokenize tokens to mel spectrogram.
+
+        Args:
+            x: [B, T_tok, D_MODEL]
+        Returns:
+            [B, T_tok * TOKEN_COMPRESSION_RATIO, N_MELS]
+        """
+        for conv, norm in self.blocks:
+            x = tf.repeat(x, repeats=2, axis=1)
+            x = conv(x)
+            x = norm(x)
+            x = tf.nn.gelu(x)
+        return self.proj(x)
 
 
 class LatentEncoder(tf.keras.Model):
