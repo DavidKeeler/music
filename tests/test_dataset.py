@@ -49,9 +49,10 @@ def test_create_dataset_returns_tf_dataset(temp_data_dir):
     """Test that create_dataset returns tf.data.Dataset."""
     data_path, cache_path = temp_data_dir
     
-    ds = create_dataset(data_path, cache_path, batch_size=2, shuffle=False)
+    ds, steps_per_epoch = create_dataset(data_path, cache_path, batch_size=2, shuffle=False)
     
     assert isinstance(ds, tf.data.Dataset)
+    assert steps_per_epoch > 0
     
     # Get first batch
     for input_batch, target_batch in ds.take(1):

@@ -8,8 +8,8 @@ import psutil
 from .config import (
     DATA_DIR, CACHE_DIR, CHECKPOINT_DIR,
     BATCH_SIZE, SEQ_LEN, LEARNING_RATE, NUM_EPOCHS,
-    INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS, MAX_CONTEXT_FRAMES,
-    GROUPED_MEL_DIM, KL_BETA
+    INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS,
+    N_MELS, KL_BETA
 )
 from .dataset import create_dataset
 from .model import MelGenerator, LatentEncoder
@@ -180,22 +180,12 @@ class MelGeneratorTraining(tf.keras.Model):
         return -0.5 * tf.reduce_mean(1.0 + z_logvar - tf.square(z_mean) - tf.exp(z_logvar))
 
     def _pure_teacher_forcing(self, x, y):
-        """Single forward pass with ground truth."""
+        """Single forward pass with ground truth. Direct MSE on raw mel."""
         with tf.GradientTape() as tape:
             z, z_mean, z_logvar = self.latent_encoder(x, training=True)
             preds = self.base_model(x, z=z, training=True)
             
-            # Compute per-frame loss: reshape [B, T/R, R*80] -> [B, T/R, R, 80]
-            from .config import REDUCTION_FACTOR, N_MELS
-            preds_shifted = preds[:, :-1, :]
-            targets_shifted = y[:, 1:, :]
-            
-            batch_size = tf.shape(preds_shifted)[0]
-            seq_len = tf.shape(preds_shifted)[1]
-            preds_frames = tf.reshape(preds_shifted, [batch_size, seq_len, REDUCTION_FACTOR, N_MELS])
-            target_frames = tf.reshape(targets_shifted, [batch_size, seq_len, REDUCTION_FACTOR, N_MELS])
-            
-            mel_loss = tf.reduce_mean(tf.square(preds_frames - target_frames))
+            mel_loss = tf.reduce_mean(tf.square(preds[:, :-1, :] - y[:, 1:, :]))
             kl_loss = self._compute_kl_loss(z_mean, z_logvar)
             loss = mel_loss + self.kl_beta * kl_loss
         
@@ -211,37 +201,27 @@ class MelGeneratorTraining(tf.keras.Model):
                 "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
     
     def _parallel_scheduled_sampling(self, x, y):
-        """Two-pass parallel scheduled sampling."""
-        batch_size = tf.shape(x)[0]
-        seq_len = tf.shape(x)[1]
-        
-        # Encode z from ground truth (no gradients for pass 1)
+        """Two-pass parallel scheduled sampling in token space."""
+        # Pass 1: Get predictions and tokenize (no gradients)
         z_pass1, _, _ = self.latent_encoder(x, training=False)
-        
-        # Pass 1: Get predictions (no gradients)
         preds_pass1 = self.base_model(x, z=z_pass1, training=False)
         
-        # Sample and mix
-        use_teacher = tf.random.uniform([batch_size, seq_len, 1]) < self.tf_ratio
-        preds_shifted = tf.concat([x[:, :1, :], preds_pass1[:, :-1, :]], axis=1)
-        mixed_input = tf.where(use_teacher, x, preds_shifted)
+        gt_tokens = self.base_model.tokenizer(x, training=False)
+        pred_tokens = self.base_model.tokenizer(preds_pass1, training=False)
         
-        # Pass 2: Train with mixed input
+        # Mix in token space
+        tok_seq_len = tf.shape(gt_tokens)[1]
+        use_teacher = tf.random.uniform([tf.shape(x)[0], tok_seq_len, 1]) < self.tf_ratio
+        pred_tokens_shifted = tf.concat([gt_tokens[:, :1, :], pred_tokens[:, :-1, :]], axis=1)
+        mixed_tokens = tf.where(use_teacher, gt_tokens, pred_tokens_shifted)
+        
+        # Pass 2: Train with mixed tokens
         with tf.GradientTape() as tape:
-            z, z_mean, z_logvar = self.latent_encoder(mixed_input, training=True)
-            preds_pass2 = self.base_model(mixed_input, z=z, training=True)
+            x_mixed = self.base_model.detokenizer(mixed_tokens, training=True)
+            z, z_mean, z_logvar = self.latent_encoder(x_mixed, training=True)
+            preds = self.base_model.forward_from_tokens(mixed_tokens, z=z, training=True)
             
-            # Compute per-frame loss
-            from .config import REDUCTION_FACTOR, N_MELS
-            preds_shifted_loss = preds_pass2[:, :-1, :]
-            targets_shifted = y[:, 1:, :]
-            
-            batch_size_loss = tf.shape(preds_shifted_loss)[0]
-            seq_len_loss = tf.shape(preds_shifted_loss)[1]
-            preds_frames = tf.reshape(preds_shifted_loss, [batch_size_loss, seq_len_loss, REDUCTION_FACTOR, N_MELS])
-            target_frames = tf.reshape(targets_shifted, [batch_size_loss, seq_len_loss, REDUCTION_FACTOR, N_MELS])
-            
-            mel_loss = tf.reduce_mean(tf.square(preds_frames - target_frames))
+            mel_loss = tf.reduce_mean(tf.square(preds[:, :-1, :] - y[:, 1:, :]))
             kl_loss = self._compute_kl_loss(z_mean, z_logvar)
             loss = mel_loss + self.kl_beta * kl_loss
         
@@ -277,7 +257,7 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
     check_batch_size(batch_size)
     
     print(f"Loading dataset from {data_dir}")
-    dataset = create_dataset(data_dir, cache_dir, batch_size)
+    dataset, steps_per_epoch = create_dataset(data_dir, cache_dir, batch_size)
     
     # Validate dataset shapes
     print("Validating dataset shapes...")
@@ -285,11 +265,10 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
         print(f"  Input shape: {x.shape}")
         print(f"  Target shape: {y.shape}")
         tf.debugging.assert_equal(tf.shape(x)[0], batch_size, message="Batch size mismatch")
-        tf.debugging.assert_equal(tf.shape(x)[2], GROUPED_MEL_DIM, message=f"Mel channels should be {GROUPED_MEL_DIM}")
+        tf.debugging.assert_equal(tf.shape(x)[2], N_MELS, message=f"Mel channels should be {N_MELS}")
         tf.debugging.assert_equal(tf.shape(x), tf.shape(y), message="Input and target shapes must match")
-    print("✓ Dataset validation passed")
+    print(f"✓ Dataset validation passed ({steps_per_epoch} steps/epoch)")
     
-    steps_per_epoch = 100  # Adjust based on dataset size
     total_steps = steps_per_epoch * epochs
     
     lr_schedule = WarmupCosineSchedule(lr, warmup_steps=5 * steps_per_epoch, total_steps=total_steps)
@@ -337,7 +316,7 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
         tf.keras.callbacks.TensorBoard(log_dir=checkpoint_dir / "logs"),
     ]
     
-    model.fit(dataset, epochs=epochs, callbacks=callbacks)
+    model.fit(dataset, epochs=epochs, steps_per_epoch=steps_per_epoch, callbacks=callbacks)
     
     # Validate checkpoint was saved
     print("Validating checkpoint...")

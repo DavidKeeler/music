@@ -84,8 +84,8 @@ class TestConfigParameters:
         """Config parameters should have correct default values."""
         assert config.INITIAL_TF_RATIO == 1.0
         assert config.MIN_TF_RATIO == 0.05
-        assert config.TF_DECAY_K == 1e-5
-        assert config.TF_WARMUP_STEPS == 0
+        assert config.TF_DECAY_K == 5e-7
+        assert config.TF_WARMUP_STEPS == 500000
     
     def test_config_values_are_valid(self):
         """Config values should be in valid ranges."""
@@ -97,14 +97,40 @@ class TestConfigParameters:
 
 
 
+class _MockTokenizer(tf.keras.layers.Layer):
+    def __init__(self):
+        super().__init__()
+        self.proj = tf.keras.layers.Dense(256)
+    def call(self, x, training=False):
+        T = tf.shape(x)[1]
+        T_tok = tf.maximum(T // 4, 1)
+        indices = tf.cast(tf.linspace(0.0, tf.cast(T - 1, tf.float32), T_tok), tf.int32)
+        return self.proj(tf.gather(x, indices, axis=1))
+
+
+class _MockDetokenizer(tf.keras.layers.Layer):
+    def __init__(self):
+        super().__init__()
+        self.proj = tf.keras.layers.Dense(80)
+    def call(self, x, training=False):
+        return self.proj(tf.repeat(x, 4, axis=1))
+
+
 class SimpleMelGenerator(tf.keras.Model):
     """Minimal mock generator for testing."""
     def __init__(self):
         super().__init__()
-        self.dense = tf.keras.layers.Dense(80)
+        self.tokenizer = _MockTokenizer()
+        self.detokenizer = _MockDetokenizer()
+        self.dense = tf.keras.layers.Dense(256)
+        self.out = tf.keras.layers.Dense(80)
+        self.tok_dense = tf.keras.layers.Dense(256)
     
-    def call(self, x, training=False):
-        return self.dense(x)
+    def call(self, x, z=None, training=False):
+        return self.out(self.dense(x))
+    
+    def forward_from_tokens(self, tokens, z=None, training=False):
+        return self.detokenizer(self.tok_dense(tokens), training=training)
 
 
 class TestTFRatioTracking:
@@ -209,7 +235,7 @@ class TestTFRatioTracking:
         trainer = MelGeneratorTraining(base_model)
         
         metrics = trainer.metrics
-        assert len(metrics) == 1
+        assert len(metrics) == 3
         assert metrics[0] is trainer.tf_ratio_metric
     
     def test_train_step_updates_ratio(self):
@@ -221,8 +247,8 @@ class TestTFRatioTracking:
         trainer.compile(optimizer='adam')
         
         # Create dummy batch
-        x = tf.random.normal([2, 10, 80])
-        y = tf.random.normal([2, 10, 80])
+        x = tf.random.normal([2, 12, 80])
+        y = tf.random.normal([2, 12, 80])
         
         initial_step = trainer.training_step.numpy()
         result = trainer.train_step((x, y))
@@ -268,8 +294,8 @@ class TestAutoregressiveTrainingStep:
         trainer = MelGeneratorTraining(base_model, initial_tf_ratio=1.0)
         trainer.compile(optimizer='adam')
         
-        x = tf.random.normal([2, 5, 80])
-        y = tf.random.normal([2, 5, 80])
+        x = tf.random.normal([2, 8, 80])
+        y = tf.random.normal([2, 8, 80])
         
         result = trainer.train_step((x, y))
         
@@ -286,8 +312,8 @@ class TestAutoregressiveTrainingStep:
         trainer = MelGeneratorTraining(base_model, initial_tf_ratio=0.0, min_tf_ratio=0.0)
         trainer.compile(optimizer='adam')
         
-        x = tf.random.normal([2, 5, 80])
-        y = tf.random.normal([2, 5, 80])
+        x = tf.random.normal([2, 8, 80])
+        y = tf.random.normal([2, 8, 80])
         
         result = trainer.train_step((x, y))
         
@@ -304,8 +330,8 @@ class TestAutoregressiveTrainingStep:
         trainer = MelGeneratorTraining(base_model, initial_tf_ratio=0.5)
         trainer.compile(optimizer='adam')
         
-        x = tf.random.normal([2, 5, 80])
-        y = tf.random.normal([2, 5, 80])
+        x = tf.random.normal([2, 8, 80])
+        y = tf.random.normal([2, 8, 80])
         
         result = trainer.train_step((x, y))
         
@@ -322,8 +348,8 @@ class TestAutoregressiveTrainingStep:
         trainer = MelGeneratorTraining(base_model, initial_tf_ratio=0.0, min_tf_ratio=0.0)
         trainer.compile(optimizer='adam')
         
-        x = tf.random.normal([2, 5, 80])
-        y = tf.random.normal([2, 5, 80])
+        x = tf.random.normal([2, 8, 80])
+        y = tf.random.normal([2, 8, 80])
         
         # Build the model first
         _ = trainer.train_step((x, y))

@@ -6,18 +6,42 @@ from src.music_generation.train import MelGeneratorTraining, exponential_tf_sche
 from src.music_generation.config import (
     D_MODEL, NUM_HEADS, NUM_LAYERS, WINDOW_SIZES, 
     INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS,
-    GROUPED_MEL_DIM
+    N_MELS
 )
 
 
-class SimpleMelGenerator(tf.keras.Model):
-    """Minimal mock generator for testing with reduction factor support."""
+class SimpleMelTokenizer(tf.keras.layers.Layer):
+    """Mock tokenizer for testing. Downsamples by 4x."""
     def __init__(self):
         super().__init__()
-        self.dense = tf.keras.layers.Dense(GROUPED_MEL_DIM)
-    
+        self.proj = tf.keras.layers.Dense(D_MODEL)
     def call(self, x, training=False):
-        return self.dense(x)
+        return self.proj(x[:, ::4, :])
+
+
+class SimpleMelDetokenizer(tf.keras.layers.Layer):
+    """Mock detokenizer for testing. Upsamples by 4x."""
+    def __init__(self):
+        super().__init__()
+        self.proj = tf.keras.layers.Dense(N_MELS)
+    def call(self, x, training=False):
+        return self.proj(tf.repeat(x, 4, axis=1))
+
+
+class SimpleMelGenerator(tf.keras.Model):
+    """Minimal mock generator with tokenizer/detokenizer for testing."""
+    def __init__(self):
+        super().__init__()
+        self.tokenizer = SimpleMelTokenizer()
+        self.detokenizer = SimpleMelDetokenizer()
+        self.tok_dense = tf.keras.layers.Dense(D_MODEL)
+        self.passthrough = tf.keras.layers.Dense(N_MELS)
+    
+    def call(self, x, z=None, training=False):
+        return self.passthrough(x)
+    
+    def forward_from_tokens(self, tokens, z=None, training=False):
+        return self.detokenizer(self.tok_dense(tokens), training=training)
 
 
 class TestTypeCompatibility(tf.test.TestCase):
@@ -95,8 +119,8 @@ class TestGradientFlow(tf.test.TestCase):
         # Create sample data
         batch_size = 2
         seq_len = 10
-        x = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
-        y = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
+        x = tf.random.normal([batch_size, seq_len, N_MELS])
+        y = tf.random.normal([batch_size, seq_len, N_MELS])
         
         with tf.GradientTape() as tape:
             # Run training step logic
@@ -130,8 +154,8 @@ class TestGradientFlow(tf.test.TestCase):
         # Create sample data
         batch_size = 2
         seq_len = 10
-        x = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
-        y = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
+        x = tf.random.normal([batch_size, seq_len, N_MELS])
+        y = tf.random.normal([batch_size, seq_len, N_MELS])
         
         # Compute loss with stop_gradient (current implementation)
         ar_input = x[:, :1, :]
@@ -169,8 +193,8 @@ class TestGradientFlow(tf.test.TestCase):
         
         batch_size = 2
         seq_len = 20
-        x = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
-        y = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
+        x = tf.random.normal([batch_size, seq_len, N_MELS])
+        y = tf.random.normal([batch_size, seq_len, N_MELS])
         
         with tf.GradientTape() as tape:
             ar_input = x[:, :1, :]
@@ -219,8 +243,8 @@ class TestIntegration(tf.test.TestCase):
         # Create sample data
         batch_size = 2
         seq_len = 32
-        x = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
-        y = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
+        x = tf.random.normal([batch_size, seq_len, N_MELS])
+        y = tf.random.normal([batch_size, seq_len, N_MELS])
         
         # Train for 100 steps - should not raise OOM or TypeError
         for step in range(100):
@@ -263,8 +287,8 @@ class TestIntegration(tf.test.TestCase):
         # Train for a few steps to build the model
         batch_size = 2
         seq_len = 16
-        x = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
-        y = tf.random.normal([batch_size, seq_len, GROUPED_MEL_DIM])
+        x = tf.random.normal([batch_size, seq_len, N_MELS])
+        y = tf.random.normal([batch_size, seq_len, N_MELS])
         
         for _ in range(10):
             training_model.train_step((x, y))

@@ -2,6 +2,24 @@
 import tensorflow as tf
 import numpy as np
 from src.music_generation.train import MelGeneratorTraining
+from src.music_generation.config import D_MODEL, N_MELS
+
+
+class _MockTokenizer(tf.keras.layers.Layer):
+    def __init__(self):
+        super().__init__()
+        self.proj = tf.keras.layers.Dense(D_MODEL)
+    def call(self, x, training=False):
+        # Downsample 4x: take every 4th frame
+        return self.proj(x[:, ::4, :])
+
+
+class _MockDetokenizer(tf.keras.layers.Layer):
+    def __init__(self):
+        super().__init__()
+        self.proj = tf.keras.layers.Dense(N_MELS)
+    def call(self, x, training=False):
+        return self.proj(tf.repeat(x, 4, axis=1))
 
 
 class SimpleMelGenerator(tf.keras.Model):
@@ -9,10 +27,16 @@ class SimpleMelGenerator(tf.keras.Model):
     
     def __init__(self):
         super().__init__()
-        self.dense = tf.keras.layers.Dense(80)
+        self.tokenizer = _MockTokenizer()
+        self.detokenizer = _MockDetokenizer()
+        self.tok_dense = tf.keras.layers.Dense(D_MODEL)
     
-    def call(self, inputs, training=False):
-        return self.dense(inputs)
+    def call(self, inputs, z=None, training=False):
+        tokens = self.tokenizer(inputs, training=training)
+        return self.forward_from_tokens(tokens, z=z, training=training)
+    
+    def forward_from_tokens(self, tokens, z=None, training=False):
+        return self.detokenizer(self.tok_dense(tokens), training=training)
 
 
 class TestPureTeacherForcing:
@@ -24,8 +48,8 @@ class TestPureTeacherForcing:
         model = MelGeneratorTraining(base_model, initial_tf_ratio=1.0)
         model.compile(optimizer='adam')
         
-        x = tf.random.normal([4, 10, 80])
-        y = tf.random.normal([4, 10, 80])
+        x = tf.random.normal([4, 12, N_MELS])
+        y = tf.random.normal([4, 12, N_MELS])
         
         result = model.train_step((x, y))
         
@@ -41,8 +65,8 @@ class TestPureTeacherForcing:
         model = MelGeneratorTraining(base_model, initial_tf_ratio=1.0)
         model.compile(optimizer='adam')
         
-        x = tf.random.normal([4, 10, 80])
-        y = tf.random.normal([4, 10, 80])
+        x = tf.random.normal([4, 12, N_MELS])
+        y = tf.random.normal([4, 12, N_MELS])
         
         result = model.train_step((x, y))
         
@@ -56,8 +80,8 @@ class TestPureTeacherForcing:
         model = MelGeneratorTraining(base_model, initial_tf_ratio=1.0)
         model.compile(optimizer='adam')
         
-        x = tf.random.normal([2, 5, 80])
-        y = tf.random.normal([2, 5, 80])
+        x = tf.random.normal([2, 8, N_MELS])
+        y = tf.random.normal([2, 8, N_MELS])
         
         result = model.train_step((x, y))
         
@@ -75,8 +99,8 @@ class TestParallelScheduledSampling:
         model = MelGeneratorTraining(base_model, initial_tf_ratio=0.5)
         model.compile(optimizer='adam')
         
-        x = tf.random.normal([4, 10, 80])
-        y = tf.random.normal([4, 10, 80])
+        x = tf.random.normal([4, 12, N_MELS])
+        y = tf.random.normal([4, 12, N_MELS])
         
         result = model.train_step((x, y))
         
@@ -105,8 +129,8 @@ class TestParallelScheduledSampling:
             
             tf.random.uniform = capture_uniform
             
-            x = tf.random.normal([4, 100, 80])
-            y = tf.random.normal([4, 100, 80])
+            x = tf.random.normal([4, 100, N_MELS])
+            y = tf.random.normal([4, 100, N_MELS])
             
             model.train_step((x, y))
             
@@ -127,8 +151,8 @@ class TestParallelScheduledSampling:
         model = MelGeneratorTraining(base_model, initial_tf_ratio=0.5)
         model.compile(optimizer='adam')
         
-        x = tf.random.normal([4, 10, 80])
-        y = tf.random.normal([4, 10, 80])
+        x = tf.random.normal([4, 12, N_MELS])
+        y = tf.random.normal([4, 12, N_MELS])
         
         result = model.train_step((x, y))
         
@@ -165,8 +189,8 @@ class TestTrainStepDispatch:
         model._pure_teacher_forcing = track_pure
         model._parallel_scheduled_sampling = track_parallel
         
-        x = tf.random.normal([4, 10, 80])
-        y = tf.random.normal([4, 10, 80])
+        x = tf.random.normal([4, 12, N_MELS])
+        y = tf.random.normal([4, 12, N_MELS])
         
         model.train_step((x, y))
         
@@ -197,8 +221,8 @@ class TestTrainStepDispatch:
         model._pure_teacher_forcing = track_pure
         model._parallel_scheduled_sampling = track_parallel
         
-        x = tf.random.normal([4, 10, 80])
-        y = tf.random.normal([4, 10, 80])
+        x = tf.random.normal([4, 12, N_MELS])
+        y = tf.random.normal([4, 12, N_MELS])
         
         model.train_step((x, y))
         
@@ -211,8 +235,8 @@ class TestTrainStepDispatch:
         model = MelGeneratorTraining(base_model, initial_tf_ratio=0.99)
         model.compile(optimizer='adam')
         
-        x = tf.random.normal([4, 10, 80])
-        y = tf.random.normal([4, 10, 80])
+        x = tf.random.normal([4, 12, N_MELS])
+        y = tf.random.normal([4, 12, N_MELS])
         
         # Should use parallel sampling (< 0.99 check)
         result = model.train_step((x, y))
@@ -231,8 +255,8 @@ class TestEndToEndTraining:
         model.compile(optimizer='adam')
         
         # Create small dataset
-        x = tf.random.normal([16, 10, 80])
-        y = tf.random.normal([16, 10, 80])
+        x = tf.random.normal([16, 12, N_MELS])
+        y = tf.random.normal([16, 12, N_MELS])
         dataset = tf.data.Dataset.from_tensor_slices((x, y)).batch(4)
         
         # Train for 2 epochs
@@ -248,7 +272,7 @@ class TestEndToEndTraining:
         model.compile(optimizer='adam')
         
         # Create dataset with learnable pattern
-        x = tf.random.normal([32, 10, 80])
+        x = tf.random.normal([32, 12, N_MELS])
         y = x * 2.0  # Simple pattern to learn
         dataset = tf.data.Dataset.from_tensor_slices((x, y)).batch(4).repeat()
         
@@ -273,8 +297,8 @@ class TestEndToEndTraining:
         
         initial_ratio = model.tf_ratio.numpy()
         
-        x = tf.random.normal([8, 10, 80])
-        y = tf.random.normal([8, 10, 80])
+        x = tf.random.normal([8, 12, N_MELS])
+        y = tf.random.normal([8, 12, N_MELS])
         dataset = tf.data.Dataset.from_tensor_slices((x, y)).batch(4)
         
         model.fit(dataset, epochs=5, verbose=0)
@@ -295,8 +319,8 @@ class TestCheckpointCompatibility:
         model.compile(optimizer='adam')
         
         # Build model by calling it
-        x = tf.random.normal([4, 10, 80])
-        y = tf.random.normal([4, 10, 80])
+        x = tf.random.normal([4, 12, N_MELS])
+        y = tf.random.normal([4, 12, N_MELS])
         _ = model(x, training=False)  # Build the model
         
         # Save weights
