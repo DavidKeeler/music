@@ -122,15 +122,20 @@ class SimpleMelGenerator(tf.keras.Model):
         super().__init__()
         self.tokenizer = _MockTokenizer()
         self.detokenizer = _MockDetokenizer()
-        self.dense = tf.keras.layers.Dense(256)
-        self.out = tf.keras.layers.Dense(80)
         self.tok_dense = tf.keras.layers.Dense(256)
+        self.projection_head = tf.keras.layers.Dense(256)
     
     def call(self, x, z=None, training=False):
-        return self.out(self.dense(x))
+        tokens = self.tokenizer(x, training=training)
+        token_preds = self.forward_tokens(tokens, z=z, training=training)
+        return self.detokenizer(token_preds, training=training)
+    
+    def forward_tokens(self, tokens, z=None, training=False):
+        return self.projection_head(self.tok_dense(tokens))
     
     def forward_from_tokens(self, tokens, z=None, training=False):
-        return self.detokenizer(self.tok_dense(tokens), training=training)
+        token_preds = self.forward_tokens(tokens, z=z, training=training)
+        return self.detokenizer(token_preds, training=training)
 
 
 class TestTFRatioTracking:

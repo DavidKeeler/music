@@ -30,13 +30,19 @@ class SimpleMelGenerator(tf.keras.Model):
         self.tokenizer = _MockTokenizer()
         self.detokenizer = _MockDetokenizer()
         self.tok_dense = tf.keras.layers.Dense(D_MODEL)
+        self.projection_head = tf.keras.layers.Dense(D_MODEL)
     
     def call(self, inputs, z=None, training=False):
         tokens = self.tokenizer(inputs, training=training)
-        return self.forward_from_tokens(tokens, z=z, training=training)
+        token_preds = self.forward_tokens(tokens, z=z, training=training)
+        return self.detokenizer(token_preds, training=training)
+    
+    def forward_tokens(self, tokens, z=None, training=False):
+        return self.projection_head(self.tok_dense(tokens))
     
     def forward_from_tokens(self, tokens, z=None, training=False):
-        return self.detokenizer(self.tok_dense(tokens), training=training)
+        token_preds = self.forward_tokens(tokens, z=z, training=training)
+        return self.detokenizer(token_preds, training=training)
 
 
 class TestPureTeacherForcing:

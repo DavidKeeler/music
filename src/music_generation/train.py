@@ -185,7 +185,7 @@ class MelGeneratorTraining(tf.keras.Model):
             z, z_mean, z_logvar = self.latent_encoder(x, training=True)
             preds = self.base_model(x, z=z, training=True)
             
-            mel_loss = tf.reduce_mean(tf.square(preds[:, :-1, :] - y[:, 1:, :]))
+            mel_loss = tf.reduce_mean(tf.square(preds - y))
             kl_loss = self._compute_kl_loss(z_mean, z_logvar)
             loss = mel_loss + self.kl_beta * kl_loss
         
@@ -202,12 +202,10 @@ class MelGeneratorTraining(tf.keras.Model):
     
     def _parallel_scheduled_sampling(self, x, y):
         """Two-pass parallel scheduled sampling in token space."""
-        # Pass 1: Get predictions and tokenize (no gradients)
+        # Pass 1: Get predicted tokens via forward_tokens (no mel roundtrip)
         z_pass1, _, _ = self.latent_encoder(x, training=False)
-        preds_pass1 = self.base_model(x, z=z_pass1, training=False)
-        
         gt_tokens = self.base_model.tokenizer(x, training=False)
-        pred_tokens = self.base_model.tokenizer(preds_pass1, training=False)
+        pred_tokens = self.base_model.forward_tokens(gt_tokens, z=z_pass1, training=False)
         
         # Mix in token space
         tok_seq_len = tf.shape(gt_tokens)[1]
@@ -215,13 +213,12 @@ class MelGeneratorTraining(tf.keras.Model):
         pred_tokens_shifted = tf.concat([gt_tokens[:, :1, :], pred_tokens[:, :-1, :]], axis=1)
         mixed_tokens = tf.where(use_teacher, gt_tokens, pred_tokens_shifted)
         
-        # Pass 2: Train with mixed tokens
+        # Pass 2: Train with mixed tokens; latent encoder uses original mel x
         with tf.GradientTape() as tape:
-            x_mixed = self.base_model.detokenizer(mixed_tokens, training=True)
-            z, z_mean, z_logvar = self.latent_encoder(x_mixed, training=True)
+            z, z_mean, z_logvar = self.latent_encoder(x, training=True)
             preds = self.base_model.forward_from_tokens(mixed_tokens, z=z, training=True)
             
-            mel_loss = tf.reduce_mean(tf.square(preds[:, :-1, :] - y[:, 1:, :]))
+            mel_loss = tf.reduce_mean(tf.square(preds - y))
             kl_loss = self._compute_kl_loss(z_mean, z_logvar)
             loss = mel_loss + self.kl_beta * kl_loss
         
