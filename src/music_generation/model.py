@@ -248,6 +248,9 @@ class MelGenerator(tf.keras.Model):
     def generate(self, seed_mel, num_frames, temperature=1.0, top_p=0.9, z=None):
         """Autoregressive generation in token space.
         
+        Tokenizes seed once, loops via forward_tokens() (no mel roundtrips),
+        detokenizes all generated tokens once at the end.
+        
         Args:
             seed_mel: Seed mel spectrogram [seed_len, N_MELS]
             num_frames: Number of individual frames to generate
@@ -263,19 +266,7 @@ class MelGenerator(tf.keras.Model):
         if z is None:
             z = tf.random.normal([1, LATENT_DIM])
         
-        # Truncate seed to C-divisible length
-        seed_len = seed_mel.shape[0]
-        truncated_len = (seed_len // C) * C
-        if truncated_len > 0:
-            seed_mel = seed_mel[:truncated_len]
-        else:
-            pad_len = C - seed_len
-            seed_mel = tf.concat([
-                tf.zeros([pad_len, N_MELS], dtype=seed_mel.dtype),
-                seed_mel
-            ], axis=0)
-        
-        # Tokenize seed: [1, seed_len, N_MELS] -> [1, seed_tokens, D_MODEL]
+        # Tokenize seed once (only tokenizer call)
         seed_tokens = self.tokenizer(seed_mel[None], training=False)
         context = seed_tokens[0]  # [seed_tokens, D_MODEL]
         
@@ -289,12 +280,9 @@ class MelGenerator(tf.keras.Model):
             if context.shape[0] > TOKEN_SEQ_LEN:
                 context = context[-TOKEN_SEQ_LEN:]
             
-            # Forward pass in token space
-            context_batch = context[None]  # [1, T_tok, D_MODEL]
-            output_mel = self.forward_from_tokens(context_batch, z=z, training=False)
-            # Re-tokenize output to get predicted next token
-            output_tokens = self.tokenizer(output_mel, training=False)
-            next_token = output_tokens[0, -1:]  # [1, D_MODEL]
+            # Forward pass entirely in token space — no mel roundtrip
+            pred_tokens = self.forward_tokens(context[None], z=z, training=False)
+            next_token = pred_tokens[0, -1:]  # [1, D_MODEL]
             
             if temperature > 0.0:
                 noise = tf.random.normal(tf.shape(next_token)) * 0.02 * temperature
@@ -303,7 +291,7 @@ class MelGenerator(tf.keras.Model):
             context = tf.concat([context, next_token], axis=0)
             generated_tokens.append(next_token)
         
-        # Detokenize all generated tokens at once
+        # Detokenize all generated tokens once (only detokenizer call)
         all_tokens = tf.concat(generated_tokens, axis=0)[None]  # [1, num_steps, D_MODEL]
         generated_mel = self.detokenizer(all_tokens, training=False)
         
