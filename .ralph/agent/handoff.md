@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-17 15:33:19 UTC_
+_Generated: 2026-03-20 01:33:56 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** 7510cfd: chore: auto-commit before merge (loop primary)
+- **HEAD:** 9a997f6: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -139,6 +139,13 @@ _Generated: 2026-03-17 15:33:19 UTC_
 - [x] Implement dataset_writer.py - TFRecord serialization
 - [x] Implement generate_dataset.py - CLI entry point
 - [x] Refactor MelGenerator conv stack from hardcoded 3-layer to dynamic config-driven, update config to [1,2,4,8,16], update tests
+- [x] Step 1: Update config.py - remove REDUCTION_FACTOR/GROUPED_MEL_DIM/EFFECTIVE_SEQ_LEN, add TOKEN_COMPRESSION_RATIO/TOKEN_NUM_CONV_LAYERS/TOKEN_SEQ_LEN
+- [x] Step 2: Add MelTokenizer and MelDetokenizer classes to model.py
+- [x] Step 3: Rewrite MelGenerator to use tokenizer/detokenizer, add forward_from_tokens
+- [x] Step 4: Update dataset.py - yield raw [SEQ_LEN, N_MELS] pairs, remove grouped-frame logic
+- [x] Step 5: Update train.py - simplify loss to direct MSE, token-space scheduled sampling
+- [x] Step 6: Rewrite MelGenerator.generate() for token-space autoregression
+- [x] Step 7: Final cleanup - remove all grouped-mel references, update docstrings, validate
 
 
 ## Key Files
@@ -152,9 +159,9 @@ Recently modified:
 - `.ralph/agent/tasks.jsonl`
 - `.ralph/current-events`
 - `.ralph/current-loop-id`
-- `.ralph/events-20260314-061625.jsonl`
-- `.ralph/events-20260314-160006.jsonl`
-- `.ralph/events-20260317-151736.jsonl`
+- `.ralph/events-20260320-003759.jsonl`
+- `.ralph/history.jsonl`
+- `.ralph/loop.lock`
 
 ## Next Session
 
@@ -163,14 +170,15 @@ Session completed successfully. No pending work.
 **Original objective:**
 
 ```
-# PROMPT: Deeper Dilated Causal Conv Refactor
+# PROMPT.md — Learned Continuous Mel Tokens
 
 ## Objective
 
-Refactor MelGenerator's hardcoded 3-layer conv stack into a dynamic config-driven dilated causal architecture with 5 layers, increasing the receptive field from ~160 ms to ~672 ms.
+Refactor the TensorFlow mel spectrogram generator to replace fixed reduction-factor frame grouping with a learned tokenizer/detokenizer architecture. The model operates on compressed continuous latent tokens and reconstructs full-resolution mel spectrograms.
 
-## Key Requirements
+## Spec Directory
 
-- Change `CONV_DILATION_RATES` in `config.py` from `[1, 2, 4]` to `[1, 2, 4, 8, 16]`
-- In `MelGenerator.__init__`: replace `self.conv1`, `self.conv2`, `self.conv_head` with `self.conv_layers` built dynamically from `CONV_DILATION_RATES`...
+All design artifacts are in `specs/learned-mel-tokens/`:
+- `design.md` — full architecture, component interfaces, data models
+- `plan.md` — 7-step increment...
 ```

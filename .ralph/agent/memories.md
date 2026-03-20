@@ -2,6 +2,34 @@
 
 ## Patterns
 
+### mem-1773979408-19ca
+> Steps 7-9 done: dataset already had no truncation and input==target (Step 7 was no-op). test_train.py mock updated with forward_tokens()+projection_head, test_training_smoke.py fixed N_MELS=100 and seq_len=12. 17 new tests in test_token_space.py cover all 8 acceptance criteria. 206 tests pass, 11 pre-existing vocoder failures. Committed as 031986d (Step 8) and d2f3731 (Step 9).
+<!-- tags: testing, tokenizer, tensorflow | created: 2026-03-20 -->
+
+### mem-1773976994-a8d8
+> Step 6 done: train.py updated. _pure_teacher_forcing uses MSE(preds, y) no shift. _parallel_scheduled_sampling uses forward_tokens(gt_tokens) instead of tokenizer(model_output), latent encoder receives original mel x not detokenized mixed tokens, detokenizer removed from training path. Test mocks updated with forward_tokens()+projection_head, call()/forward_from_tokens() delegate through forward_tokens(). 166 tests pass. Committed as 3e28b32.
+<!-- tags: train, tokenizer, tensorflow | created: 2026-03-20 -->
+
+### mem-1773976116-518a
+> generate() rewritten: forward_tokens() replaces forward_from_tokens()+tokenizer() roundtrip in loop. Tokenizer called once (seed), detokenizer once (end). Seed truncation removed (tokenizer handles padding). Step 5 of 9 in token-space refactor. 73 core tests pass.
+<!-- tags: model, tokenizer, tensorflow | created: 2026-03-20 -->
+
+### mem-1773975859-d40e
+> Step 4 done: call() captures original_T and passes target_length to detokenizer for output trimming. forward_from_tokens() delegates to forward_tokens() + detokenizer (no duplicate pipeline). Arbitrary input lengths now work (T=1,5,13,63,100,510 verified). 68 core tests pass. Committed as 52abe2d.
+<!-- tags: model, tokenizer, tensorflow | created: 2026-03-20 -->
+
+### mem-1773975463-c846
+> MelTokenizer updated: pads input to next multiple of TOKEN_COMPRESSION_RATIO before conv layers using (-tf.shape(x)[1]) % C. Accepts any input length T, produces ceil(T/C) tokens. Verified for T=1,5,10,12,13,15,16,512. Step 3 of 9 in token-space refactor.
+<!-- tags: model, tokenizer, tensorflow | created: 2026-03-20 -->
+
+### mem-1773974080-d028
+> MelDetokenizer updated: UpSampling1D(size=2) replaces tf.repeat in each block. Blocks are now (up, conv, norm) tuples. call() accepts target_length param for output trimming. Step 2 of 9 in token-space refactor.
+<!-- tags: model, tokenizer, tensorflow | created: 2026-03-20 -->
+
+### mem-1773973357-e9a5
+> forward_tokens() added to MelGenerator: runs z-conditioning + conv stack + transformers + projection_head(Dense(D_MODEL)), returns [B, T_tok, D_MODEL]. forward_from_tokens() unchanged (still has its own pipeline). Step 1 of 9 in token-space refactor.
+<!-- tags: model, tokenizer, tensorflow | created: 2026-03-20 -->
+
 ### mem-1773969700-d7d5
 > train.py updated for learned tokens: direct MSE loss (no reshape), token-space scheduled sampling in _parallel_scheduled_sampling (tokenize->mix->forward_from_tokens). GROUPED_MEL_DIM replaced with N_MELS. train() uses steps_per_epoch from create_dataset(). Test mocks need tokenizer/detokenizer/forward_from_tokens attrs and z kwarg in call(). Seq_lens in tests must be 4-divisible for tokenizer round-trip.
 <!-- tags: train, tokenizer, tensorflow | created: 2026-03-20 -->

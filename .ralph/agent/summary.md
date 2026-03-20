@@ -1,8 +1,8 @@
 # Loop Summary
 
 **Status:** Completed successfully
-**Iterations:** 6
-**Duration:** 55m 56s
+**Iterations:** 1
+**Duration:** 21m 42s
 
 ## Tasks
 
@@ -14,4 +14,4 @@ _No events recorded._
 
 ## Final Commit
 
-d2c4452: Remove all REDUCTION_FACTOR/GROUPED_MEL_DIM/EFFECTIVE_SEQ_LEN references
+d2f3731: Step 9: Add token-space correctness tests

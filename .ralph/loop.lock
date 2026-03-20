@@ -1,5 +1,5 @@
 {
-  "pid": 89998,
-  "started": "2026-03-20T00:37:59.801718Z",
-  "prompt": "# PROMPT.md — Learned Continuous Mel Tokens\n\n## Objective\n\nRefactor the TensorFlow mel spectrogra..."
+  "pid": 1501,
+  "started": "2026-03-20T03:42:16.934089Z",
+  "prompt": "# Token-Space Autoregressive Refactor\n\n## Objective\n\nFix autoregressive correctness in the mel gene..."
 }

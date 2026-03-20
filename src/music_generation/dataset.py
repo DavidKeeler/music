@@ -5,7 +5,7 @@ import json
 import logging
 
 from .audio_utils import load_audio, audio_to_mel, normalize_mel
-from .config import SEQ_LEN, N_MELS, TOKEN_COMPRESSION_RATIO
+from .config import SEQ_LEN, N_MELS
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class MusicNetDataset:
     - Builds sequence indices without loading mels (lazy loading)
     - Loads mels on-demand during iteration
     
-    Returns (input_mel, target_mel) pairs where target is input shifted by 1 frame.
+    Returns (input_mel, target_mel) pairs where input and target are the same slice.
     """
     
     def __init__(self, data_dir: Path, cache_dir: Path):
@@ -129,23 +129,16 @@ class MusicNetDataset:
             mel = self._load_or_compute_mel(audio_file)
             mel_length = mel.shape[0]
             
-            # Truncate to be divisible by TOKEN_COMPRESSION_RATIO
-            truncated_length = mel_length - (mel_length % TOKEN_COMPRESSION_RATIO)
-            if truncated_length == 0:
-                continue
-            mel = mel[:truncated_length]
-            
             # Skip if too short
-            if mel.shape[0] <= SEQ_LEN:
+            if mel_length < SEQ_LEN:
                 continue
             
             # Generate sequences with stride on raw mel frames
             stride = SEQ_LEN // 2
-            for start_frame in range(0, mel.shape[0] - SEQ_LEN, stride):
+            for start_frame in range(0, mel_length - SEQ_LEN + 1, stride):
                 input_mel = mel[start_frame:start_frame + SEQ_LEN]
-                target_mel = mel[start_frame + 1:start_frame + SEQ_LEN + 1]
                 
-                yield input_mel.numpy(), target_mel.numpy()
+                yield input_mel.numpy(), input_mel.numpy()
     
     def __len__(self) -> int:
         """Return approximate number of sequences."""

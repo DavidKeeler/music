@@ -204,18 +204,19 @@ class MelGeneratorTraining(tf.keras.Model):
         """Two-pass parallel scheduled sampling in token space."""
         # Pass 1: Get predicted tokens via forward_tokens (no mel roundtrip)
         z_pass1, _, _ = self.latent_encoder(x, training=False)
-        gt_tokens = self.base_model.tokenizer(x, training=False)
-        pred_tokens = self.base_model.forward_tokens(gt_tokens, z=z_pass1, training=False)
+        gt_tokens_detached = self.base_model.tokenizer(x, training=False)
+        pred_tokens = self.base_model.forward_tokens(gt_tokens_detached, z=z_pass1, training=False)
         
-        # Mix in token space
-        tok_seq_len = tf.shape(gt_tokens)[1]
+        # Mix in token space (stop_gradient so pass 1 stays detached)
+        pred_tokens_shifted = tf.concat([gt_tokens_detached[:, :1, :], pred_tokens[:, :-1, :]], axis=1)
+        tok_seq_len = tf.shape(gt_tokens_detached)[1]
         use_teacher = tf.random.uniform([tf.shape(x)[0], tok_seq_len, 1]) < self.tf_ratio
-        pred_tokens_shifted = tf.concat([gt_tokens[:, :1, :], pred_tokens[:, :-1, :]], axis=1)
-        mixed_tokens = tf.where(use_teacher, gt_tokens, pred_tokens_shifted)
         
-        # Pass 2: Train with mixed tokens; latent encoder uses original mel x
+        # Pass 2: Re-tokenize inside tape so tokenizer gets gradients
         with tf.GradientTape() as tape:
             z, z_mean, z_logvar = self.latent_encoder(x, training=True)
+            gt_tokens = self.base_model.tokenizer(x, training=True)
+            mixed_tokens = tf.where(use_teacher, gt_tokens, tf.stop_gradient(pred_tokens_shifted))
             preds = self.base_model.forward_from_tokens(mixed_tokens, z=z, training=True)
             
             mel_loss = tf.reduce_mean(tf.square(preds - y))
