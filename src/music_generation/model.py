@@ -170,6 +170,9 @@ class MelGenerator(tf.keras.Model):
         
         # Latent conditioning projection
         self.z_proj = tf.keras.layers.Dense(D_MODEL)
+        
+        # Token-space projection head for forward_tokens()
+        self.projection_head = tf.keras.layers.Dense(D_MODEL)
     
     def call(self, mel, z=None, training=False):
         """Forward pass (parallel processing for training).
@@ -184,6 +187,37 @@ class MelGenerator(tf.keras.Model):
         """
         tokens = self.tokenizer(mel, training=training)
         return self.forward_from_tokens(tokens, z=z, training=training)
+    
+    def forward_tokens(self, tokens, z=None, training=False):
+        """Token-space forward pass — stops before detokenizer.
+        
+        Args:
+            tokens: [B, T_tok, D_MODEL]
+            z: Optional latent vector [B, latent_dim]. If None, sampled from N(0,1).
+            training: Whether in training mode
+        
+        Returns:
+            [B, T_tok, D_MODEL] — projected token predictions
+        """
+        batch_size = tf.shape(tokens)[0]
+        seq_len = tf.shape(tokens)[1]
+        
+        if z is None:
+            z = tf.random.normal([batch_size, LATENT_DIM])
+        
+        z_embed = self.z_proj(z)
+        z_embed = tf.expand_dims(z_embed, axis=1)
+        z_embed = tf.broadcast_to(z_embed, [batch_size, seq_len, D_MODEL])
+        x = tokens + z_embed
+        
+        for conv in self.conv_layers:
+            x = conv(x, training=training)
+        
+        x = self.transformer1(x)
+        x = self.transformer2(x)
+        x = self.transformer3(x)
+        
+        return self.projection_head(x)
     
     def forward_from_tokens(self, tokens, z=None, training=False):
         """Forward pass from pre-tokenized input (for scheduled sampling).
