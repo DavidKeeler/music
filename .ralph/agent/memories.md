@@ -2,6 +2,26 @@
 
 ## Patterns
 
+### mem-1773969700-d7d5
+> train.py updated for learned tokens: direct MSE loss (no reshape), token-space scheduled sampling in _parallel_scheduled_sampling (tokenize->mix->forward_from_tokens). GROUPED_MEL_DIM replaced with N_MELS. train() uses steps_per_epoch from create_dataset(). Test mocks need tokenizer/detokenizer/forward_from_tokens attrs and z kwarg in call(). Seq_lens in tests must be 4-divisible for tokenizer round-trip.
+<!-- tags: train, tokenizer, tensorflow | created: 2026-03-20 -->
+
+### mem-1773968715-2c14
+> Dataset updated for learned tokens: yields raw [SEQ_LEN, N_MELS] pairs instead of grouped [EFFECTIVE_SEQ_LEN, GROUPED_MEL_DIM]. Truncates to TOKEN_COMPRESSION_RATIO-divisible length. Stride=SEQ_LEN//2. create_dataset returns (ds, steps_per_epoch) tuple. No GROUPED_MEL_DIM/REDUCTION_FACTOR/EFFECTIVE_SEQ_LEN references remain in dataset.py.
+<!-- tags: dataset, tokenizer, tensorflow | created: 2026-03-20 -->
+
+### mem-1773968371-8b71
+> MelGenerator rewritten: tokenizer replaces input_proj, detokenizer replaces output_proj. call() tokenizes->forward_from_tokens(). forward_from_tokens(tokens, z, training) runs z_embed+conv_stack+transformers+detokenizer. generate() works in token space: tokenize seed, autoregressive loop producing D_MODEL tokens, detokenize all at end. Causality tests need fixed z (z=None samples randomly each call). Tests use N_MELS not GROUPED_MEL_DIM, seq lengths must be C-divisible.
+<!-- tags: model, tokenizer, tensorflow | created: 2026-03-20 -->
+
+### mem-1773967598-1d7c
+> MelTokenizer: causal strided Conv1D encoder with TOKEN_NUM_CONV_LAYERS blocks. Each block: left-pad(kernel_size-1) + Conv1D(stride=2,valid) + LayerNorm + GELU. Final Dense(D_MODEL). Filter progression: N_MELS -> D_MODEL linearly interpolated. MelDetokenizer: mirrors with tf.repeat(2x) + CausalConv1D + LayerNorm + GELU per block, final Dense(N_MELS). Both strictly causal. Backward-compat aliases added to config.py for REDUCTION_FACTOR/GROUPED_MEL_DIM/EFFECTIVE_SEQ_LEN during migration.
+<!-- tags: tokenizer, model, tensorflow | created: 2026-03-20 -->
+
+### mem-1773967242-f1a2
+> Learned tokenizer config: TOKEN_COMPRESSION_RATIO=4 (power of 2, asserted), TOKEN_NUM_CONV_LAYERS=2 (log2), TOKEN_SEQ_LEN=128 (SEQ_LEN//C). Replaces REDUCTION_FACTOR, GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN. D_MODEL=256. import math added mid-file for log2.
+<!-- tags: config, tokenizer, tensorflow | created: 2026-03-20 -->
+
 ### mem-1773761557-5bfc
 > MelGenerator conv stack refactored: self.conv_layers = [CausalConvBlock(..., dilation_rate=d) for d in CONV_DILATION_RATES]. All convs before transformers, no post-transformer conv_head. CONV_DILATION_RATES=[1,2,4,8,16] gives RF=63 frames (~672ms). No padding/truncation logic. Arbitrary rates supported.
 <!-- tags: dilated-convolutions, model, tensorflow | created: 2026-03-17 -->
@@ -379,6 +399,10 @@
 <!-- tags: tensorflow, python, environment | created: 2026-02-28 -->
 
 ## Context
+
+### mem-1773970425-e699
+> Final cleanup complete: removed REDUCTION_FACTOR/GROUPED_MEL_DIM/EFFECTIVE_SEQ_LEN backward-compat aliases from config.py, deleted test_reduction_factor.py and test_inference_r4*.py. All 7 steps of learned mel tokens migration done. Zero grep matches for old constants in src/music_generation/.
+<!-- tags: tokenizer, config, cleanup | created: 2026-03-20 -->
 
 ### mem-1772915792-b1cc
 > Vocoder replacement complete: All 10 steps implemented and tested. Griffin-Lim (debug), HiFi-GAN (primary), Vocos (fallback) all working. MelNormalizer integrated. train_vocoder.py ready for GPU fine-tuning. All 5 acceptance criteria met. 25 tests passing. Ready for deployment.

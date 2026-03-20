@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-14 16:13:53 UTC_
+_Generated: 2026-03-17 15:33:19 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** 689ac1c: chore: auto-commit before merge (loop primary)
+- **HEAD:** 7510cfd: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -138,6 +138,7 @@ _Generated: 2026-03-14 16:13:53 UTC_
 - [x] Implement skeleton_builder.py - wrist trajectory to 17-joint MoveNet skeleton
 - [x] Implement dataset_writer.py - TFRecord serialization
 - [x] Implement generate_dataset.py - CLI entry point
+- [x] Refactor MelGenerator conv stack from hardcoded 3-layer to dynamic config-driven, update config to [1,2,4,8,16], update tests
 
 
 ## Key Files
@@ -153,7 +154,7 @@ Recently modified:
 - `.ralph/current-loop-id`
 - `.ralph/events-20260314-061625.jsonl`
 - `.ralph/events-20260314-160006.jsonl`
-- `.ralph/history.jsonl`
+- `.ralph/events-20260317-151736.jsonl`
 
 ## Next Session
 
@@ -162,13 +163,14 @@ Session completed successfully. No pending work.
 **Original objective:**
 
 ```
-# PROMPT.md — Beat Signature Dataset Generator
+# PROMPT: Deeper Dilated Causal Conv Refactor
 
 ## Objective
 
-Build a CLI tool at `src/music_generation/generate_dataset.py` that generates synthetic conducting gesture datasets from `.wav` files. It pairs mel spectrograms with procedurally generated conducting keypoint sequences aligned to detected beats, outputting TFRecords compatible with the existing body-point-module pipeline.
+Refactor MelGenerator's hardcoded 3-layer conv stack into a dynamic config-driven dilated causal architecture with 5 layers, increasing the receptive field from ~160 ms to ~672 ms.
 
 ## Key Requirements
 
-- Detect beats, downbeats, tempo, and time signature from audio using BeatNet (offline mod...
+- Change `CONV_DILATION_RATES` in `config.py` from `[1, 2, 4]` to `[1, 2, 4, 8, 16]`
+- In `MelGenerator.__init__`: replace `self.conv1`, `self.conv2`, `self.conv_head` with `self.conv_layers` built dynamically from `CONV_DILATION_RATES`...
 ```
