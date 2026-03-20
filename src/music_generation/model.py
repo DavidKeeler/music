@@ -55,7 +55,7 @@ class MelTokenizer(tf.keras.layers.Layer):
 class MelDetokenizer(tf.keras.layers.Layer):
     """Causal upsampling decoder: [B, T_tok, D_MODEL] -> [B, T_tok*C, N_MELS].
 
-    Uses tf.repeat nearest-neighbor upsampling followed by causal Conv1D.
+    Uses UpSampling1D + CausalConv1D for learned upsampling.
     Strict causality preserved throughout.
     """
 
@@ -69,25 +69,30 @@ class MelDetokenizer(tf.keras.layers.Layer):
         ]
         self.blocks = []
         for i in range(n):
+            up = tf.keras.layers.UpSampling1D(size=2)
             conv = CausalConv1D(filters[i], kernel_size=3)
             norm = tf.keras.layers.LayerNormalization()
-            self.blocks.append((conv, norm))
+            self.blocks.append((up, conv, norm))
         self.proj = tf.keras.layers.Dense(N_MELS)
 
-    def call(self, x, training=False):
+    def call(self, x, target_length=None, training=False):
         """Detokenize tokens to mel spectrogram.
 
         Args:
             x: [B, T_tok, D_MODEL]
+            target_length: If provided, trim output to [:, :target_length, :]
         Returns:
-            [B, T_tok * TOKEN_COMPRESSION_RATIO, N_MELS]
+            [B, T_tok * TOKEN_COMPRESSION_RATIO, N_MELS] or [B, target_length, N_MELS]
         """
-        for conv, norm in self.blocks:
-            x = tf.repeat(x, repeats=2, axis=1)
+        for up, conv, norm in self.blocks:
+            x = up(x)
             x = conv(x)
             x = norm(x)
             x = tf.nn.gelu(x)
-        return self.proj(x)
+        x = self.proj(x)
+        if target_length is not None:
+            x = x[:, :target_length, :]
+        return x
 
 
 class LatentEncoder(tf.keras.Model):
