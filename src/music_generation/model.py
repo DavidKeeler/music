@@ -11,10 +11,11 @@ from src.music_generation.layers import CausalConvBlock, CausalConv1D, Transform
 
 
 class MelTokenizer(tf.keras.layers.Layer):
-    """Causal strided Conv1D encoder: [B, T, N_MELS] -> [B, T//C, D_MODEL].
+    """Causal strided Conv1D encoder: [B, T, N_MELS] -> [B, ceil(T/C), D_MODEL].
 
     Uses TOKEN_NUM_CONV_LAYERS successive stride-2 causal convolutions for
     learned temporal compression. Strict causality via left-padding.
+    Pads input to next multiple of TOKEN_COMPRESSION_RATIO before encoding.
     """
 
     def __init__(self, **kwargs):
@@ -40,10 +41,14 @@ class MelTokenizer(tf.keras.layers.Layer):
         """Tokenize mel spectrogram.
 
         Args:
-            x: [B, T, N_MELS] where T is divisible by TOKEN_COMPRESSION_RATIO
+            x: [B, T, N_MELS] — T can be any length.
         Returns:
-            [B, T // TOKEN_COMPRESSION_RATIO, D_MODEL]
+            [B, ceil(T / TOKEN_COMPRESSION_RATIO), D_MODEL]
         """
+        # Pad to next multiple of C so stride-2 convs produce exact T_padded/C tokens
+        C = TOKEN_COMPRESSION_RATIO
+        pad_amount = (-tf.shape(x)[1]) % C
+        x = tf.pad(x, [[0, 0], [0, pad_amount], [0, 0]])
         for padding, conv, norm in self.blocks:
             x = tf.pad(x, [[0, 0], [padding, 0], [0, 0]])
             x = conv(x)
