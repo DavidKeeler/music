@@ -7,6 +7,7 @@ from src.music_generation.train import MelGeneratorTraining
 from src.music_generation.train_vocoder import VocoderTraining
 from src.music_generation.model import MelGenerator
 from src.music_generation.inference import MusicGenerationModel
+from src.music_generation.config import N_MELS
 
 
 def test_mel_generator_training_smoke():
@@ -15,9 +16,9 @@ def test_mel_generator_training_smoke():
     training_model = MelGeneratorTraining(mel_gen)
     training_model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
     
-    # Synthetic batch
-    batch_size, seq_len, mel_dim = 2, 10, 80
-    x = tf.random.normal([batch_size, seq_len, mel_dim])
+    # Synthetic batch — use 12 frames (divisible by TOKEN_COMPRESSION_RATIO=4)
+    batch_size, seq_len = 2, 12
+    x = tf.random.normal([batch_size, seq_len, N_MELS])
     y = x
     
     # Run one training step
@@ -76,26 +77,22 @@ def test_vocoder_training_smoke():
 def test_checkpoint_save_and_load():
     """Smoke test: save and load checkpoint with .h5 extension."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Create actual MelGenerator
         from src.music_generation.model import MelGenerator
         
         mel_gen = MelGenerator()
         
-        # Build model by calling it
-        mel_gen(tf.random.normal([1, 10, 80]))
+        # Build model — use length divisible by TOKEN_COMPRESSION_RATIO
+        mel_gen(tf.random.normal([1, 12, N_MELS]))
         
-        # Save with .h5 extension (weights only)
         mel_checkpoint = Path(tmpdir) / "mel_gen.weights.h5"
         mel_gen.save_weights(str(mel_checkpoint))
         
-        # Load weights into new model
         mel_gen_loaded = MelGenerator()
-        mel_gen_loaded(tf.random.normal([1, 10, 80]))  # Build the model first
+        mel_gen_loaded(tf.random.normal([1, 12, N_MELS]))
         mel_gen_loaded.load_weights(str(mel_checkpoint))
         
-        # Verify it works
-        test_input = tf.random.normal([1, 10, 80])
+        test_input = tf.random.normal([1, 12, N_MELS])
         output = mel_gen_loaded(test_input)
         
-        assert output.shape == (1, 10, 80)
+        assert output.shape == (1, 12, N_MELS)
         assert not tf.reduce_any(tf.math.is_nan(output))
