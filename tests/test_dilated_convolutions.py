@@ -63,7 +63,7 @@ class TestIntegration:
     def test_output_shape_unchanged(self):
         """Test model output shape matches input shape."""
         model = MelGenerator()
-        x = tf.random.normal([2, 10, GROUPED_MEL_DIM])
+        x = tf.random.normal([2, 40, N_MELS])  # T must be divisible by C=4
         y = model(x, training=False)
         assert y.shape == x.shape
     
@@ -71,15 +71,15 @@ class TestIntegration:
         """Test output at time t doesn't depend on future inputs."""
         model = MelGenerator()
         z = tf.random.normal([1, 64])  # Fixed latent for both calls
-        x = tf.random.normal([1, 20, GROUPED_MEL_DIM])
+        x = tf.random.normal([1, 80, N_MELS])
         y_full = model(x, z=z, training=False)
-        y_truncated = model(x[:, :10, :], z=z, training=False)
-        tf.debugging.assert_near(y_full[:, :10, :], y_truncated, atol=1e-5)
+        y_truncated = model(x[:, :40, :], z=z, training=False)
+        tf.debugging.assert_near(y_full[:, :40, :], y_truncated, atol=1e-5)
     
     def test_forward_pass_no_errors(self):
         """Test forward pass completes without errors."""
         model = MelGenerator()
-        x = tf.random.normal([4, 32, GROUPED_MEL_DIM])
+        x = tf.random.normal([4, 128, N_MELS])
         y = model(x, training=True)
         assert not tf.reduce_any(tf.math.is_nan(y))
         assert not tf.reduce_any(tf.math.is_inf(y))
@@ -96,8 +96,6 @@ class TestIntegration:
     def test_convs_before_transformers(self):
         """Verify all conv layers run before transformer blocks."""
         model = MelGenerator()
-        x = tf.random.normal([1, 10, GROUPED_MEL_DIM])
-        # If we get here without error, the call() ordering is correct
-        # (conv loop → transformers → output_proj)
+        x = tf.random.normal([1, 40, N_MELS])
         y = model(x, training=False)
-        assert y.shape == (1, 10, GROUPED_MEL_DIM)
+        assert y.shape == (1, 40, N_MELS)

@@ -3,33 +3,38 @@
 import tensorflow as tf
 import pytest
 from src.music_generation.model import MelGenerator
-from src.music_generation.config import GROUPED_MEL_DIM, EFFECTIVE_SEQ_LEN, N_MELS
+from src.music_generation.config import N_MELS, SEQ_LEN, D_MODEL, TOKEN_SEQ_LEN
 
 
 def test_forward_shape():
-    """Test forward pass with grouped frames."""
+    """Test forward pass with raw mel frames."""
     model = MelGenerator()
-    # Input: [B, T/R, R*80] = [2, 128, 320]
-    x = tf.random.normal([2, EFFECTIVE_SEQ_LEN, GROUPED_MEL_DIM])
+    x = tf.random.normal([2, SEQ_LEN, N_MELS])
     y = model(x, training=False)
-    assert y.shape == (2, EFFECTIVE_SEQ_LEN, GROUPED_MEL_DIM)
+    assert y.shape == (2, SEQ_LEN, N_MELS)
 
 
 def test_forward_different_seq_lengths():
-    """Test forward works with various sequence lengths."""
+    """Test forward works with various sequence lengths divisible by C."""
     model = MelGenerator()
-    for seq_len in [16, 32, 64, 128]:  # Grouped sequence lengths
-        x = tf.random.normal([1, seq_len, GROUPED_MEL_DIM])
+    for seq_len in [64, 128, 256, 512]:
+        x = tf.random.normal([1, seq_len, N_MELS])
         y = model(x, training=False)
-        assert y.shape == (1, seq_len, GROUPED_MEL_DIM)
+        assert y.shape == (1, seq_len, N_MELS)
+
+
+def test_forward_from_tokens():
+    """Test forward_from_tokens produces correct shape."""
+    model = MelGenerator()
+    tokens = tf.random.normal([2, TOKEN_SEQ_LEN, D_MODEL])
+    y = model.forward_from_tokens(tokens, training=False)
+    assert y.shape == (2, SEQ_LEN, N_MELS)
 
 
 def test_generate_shape():
     """Test autoregressive generation produces correct shape."""
     model = MelGenerator()
-    # Seed with individual frames [64, 80]
     seed = tf.random.normal([64, N_MELS])
-    # Generate 100 individual frames
     generated = model.generate(seed, num_frames=100, temperature=1.0)
     assert generated.shape == (100, N_MELS)
 
@@ -37,9 +42,7 @@ def test_generate_shape():
 def test_no_nan_inf():
     """Test model doesn't produce NaN or Inf."""
     model = MelGenerator()
-    # Input: [B, T/R, R*80] = [2, 64, 320]
-    x = tf.random.normal([2, 64, GROUPED_MEL_DIM])
+    x = tf.random.normal([2, 256, N_MELS])
     y = model(x, training=False)
-    
     assert not tf.reduce_any(tf.math.is_nan(y))
     assert not tf.reduce_any(tf.math.is_inf(y))

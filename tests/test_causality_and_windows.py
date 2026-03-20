@@ -4,41 +4,38 @@ import tensorflow as tf
 import pytest
 from src.music_generation.model import MelGenerator
 from src.music_generation.layers import LocalWindowAttention
+from src.music_generation.config import N_MELS, TOKEN_COMPRESSION_RATIO, LATENT_DIM
 
 
 def test_causality_forward_pass():
     """Test that output at time t only depends on inputs <= t."""
     model = MelGenerator()
+    C = TOKEN_COMPRESSION_RATIO
+    z = tf.zeros([1, LATENT_DIM])  # Fixed z to avoid random sampling differences
     
-    # Create input sequence
-    x = tf.random.normal([1, 256, 80])
+    x = tf.random.normal([1, 256, N_MELS])
+    y_full = model(x, z=z, training=False)
     
-    # Forward pass
-    y_full = model(x, training=False)
+    modify_frame = 200
+    safe_frame = (modify_frame // C) * C
     
-    # Modify future frames and verify output at early timesteps doesn't change
     x_modified = tf.identity(x)
     x_modified = tf.tensor_scatter_nd_update(
-        x_modified,
-        [[0, 200, 0]],  # Modify frame 200
-        [999.0]
+        x_modified, [[0, modify_frame, 0]], [999.0]
     )
-    y_modified = model(x_modified, training=False)
+    y_modified = model(x_modified, z=z, training=False)
     
-    # Output at timesteps < 200 should be identical
-    assert tf.reduce_max(tf.abs(y_full[0, :200, :] - y_modified[0, :200, :])) < 1e-5
+    assert tf.reduce_max(tf.abs(y_full[0, :safe_frame, :] - y_modified[0, :safe_frame, :])) < 1e-5
 
 
 def test_causality_generate():
-    """Test that generate() is strictly causal."""
+    """Test that generate() is strictly causal (deterministic with fixed z)."""
     model = MelGenerator()
+    z = tf.zeros([1, LATENT_DIM])
     
-    # Generate with seed
-    seed = tf.random.normal([64, 80])
-    generated = model.generate(seed, num_frames=50, temperature=0.0)
-    
-    # Each frame should be deterministic given the same seed
-    generated2 = model.generate(seed, num_frames=50, temperature=0.0)
+    seed = tf.random.normal([64, N_MELS])
+    generated = model.generate(seed, num_frames=50, temperature=0.0, z=z)
+    generated2 = model.generate(seed, num_frames=50, temperature=0.0, z=z)
     
     assert tf.reduce_max(tf.abs(generated - generated2)) < 1e-5
 
@@ -93,20 +90,19 @@ def test_relative_position_bias_shape():
 def test_causality_with_different_seq_lengths():
     """Test causality holds for various sequence lengths."""
     model = MelGenerator()
+    C = TOKEN_COMPRESSION_RATIO
+    z = tf.zeros([1, LATENT_DIM])
     
     for seq_len in [64, 128, 256, 512]:
-        x = tf.random.normal([1, seq_len, 80])
-        y_full = model(x, training=False)
+        x = tf.random.normal([1, seq_len, N_MELS])
+        y_full = model(x, z=z, training=False)
         
-        # Modify last frame
         x_modified = tf.identity(x)
         x_modified = tf.tensor_scatter_nd_update(
-            x_modified,
-            [[0, seq_len - 1, 0]],
-            [999.0]
+            x_modified, [[0, seq_len - 1, 0]], [999.0]
         )
-        y_modified = model(x_modified, training=False)
+        y_modified = model(x_modified, z=z, training=False)
         
-        # All frames except the last should be identical
-        if seq_len > 1:
-            assert tf.reduce_max(tf.abs(y_full[0, :-1, :] - y_modified[0, :-1, :])) < 1e-5
+        safe_frame = ((seq_len - 1) // C) * C
+        if safe_frame > 0:
+            assert tf.reduce_max(tf.abs(y_full[0, :safe_frame, :] - y_modified[0, :safe_frame, :])) < 1e-5
