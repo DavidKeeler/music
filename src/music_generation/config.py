@@ -39,13 +39,12 @@ VOCODER_LR = 1e-4
 
 # Model Architecture Parameters
 # Transformer hidden dimension (reduced to 128 for memory optimization)
-D_MODEL = 128
+D_MODEL = 256
 # Number of attention heads
 NUM_HEADS = 4
 # Number of transformer layers
 NUM_LAYERS = 3
-# Local attention window sizes per layer (adjusted for REDUCTION_FACTOR=4)
-# Effective sequence length = SEQ_LEN / REDUCTION_FACTOR = 512 / 4 = 128
+# Local attention window sizes per layer (adjusted for TOKEN_SEQ_LEN=128)
 WINDOW_SIZES = [32, 64, 128]
 
 # Latent Conditioning (VAE)
@@ -68,14 +67,19 @@ LEARNING_RATE = 1e-4
 # Number of training epochs (reduced from 20 to 3 for faster iteration on CPU)
 NUM_EPOCHS = 3
 
-# Reduction Factor for Multi-Frame Prediction
-# R=1: predict single frame (original behavior)
-# R=4: predict 4 frames per step (4x speedup, default)
-REDUCTION_FACTOR = 4
-# Effective sequence length after grouping frames
-EFFECTIVE_SEQ_LEN = SEQ_LEN // REDUCTION_FACTOR  # 512 // 4 = 128
-# Grouped mel dimension (R frames concatenated)
-GROUPED_MEL_DIM = N_MELS * REDUCTION_FACTOR  # 100 * 4 = 400
+# Learned Tokenizer Configuration
+# Compression ratio for mel tokenizer (must be power of 2)
+# Controls temporal downsampling: T_tokens = T / TOKEN_COMPRESSION_RATIO
+# Implemented as successive stride-2 causal convolutions
+TOKEN_COMPRESSION_RATIO = 4
+assert TOKEN_COMPRESSION_RATIO > 0 and (TOKEN_COMPRESSION_RATIO & (TOKEN_COMPRESSION_RATIO - 1)) == 0, \
+    f"TOKEN_COMPRESSION_RATIO must be a power of 2, got {TOKEN_COMPRESSION_RATIO}"
+
+import math
+# Number of stride-2 conv layers in tokenizer/detokenizer
+TOKEN_NUM_CONV_LAYERS = int(math.log2(TOKEN_COMPRESSION_RATIO))
+# Token sequence length after compression
+TOKEN_SEQ_LEN = SEQ_LEN // TOKEN_COMPRESSION_RATIO  # 512 // 4 = 128
 
 # Teacher Forcing Schedule Parameters
 # Initial teacher forcing ratio (1.0 = always use ground truth)
@@ -86,10 +90,6 @@ MIN_TF_RATIO = 0.05
 TF_DECAY_K = 5e-7
 # Warmup steps before decay starts (ratio stays at INITIAL_TF_RATIO)
 TF_WARMUP_STEPS = 500000
-# Maximum context frames for autoregressive training (default: 128 for memory efficiency)
-# Trade-off: larger values enable longer-range dependencies but use more memory
-# Can be increased up to SEQ_LEN (512) if memory allows
-MAX_CONTEXT_FRAMES = 128
 
 # Inference Parameters
 # Temperature for sampling (1.0 = no scaling)
