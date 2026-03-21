@@ -31,11 +31,12 @@ class MelTokenizer(tf.keras.layers.Layer):
             kernel_size = 3
             padding = kernel_size - 1  # causal left-pad for stride-2
             conv = tf.keras.layers.Conv1D(
-                filters[i], kernel_size, strides=2, padding='valid'
+                filters[i], kernel_size, strides=2, padding='valid',
+                name=f'conv_{i}'
             )
-            norm = tf.keras.layers.LayerNormalization()
+            norm = tf.keras.layers.LayerNormalization(name=f'norm_{i}')
             self.blocks.append((padding, conv, norm))
-        self.proj = tf.keras.layers.Dense(D_MODEL)
+        self.proj = tf.keras.layers.Dense(D_MODEL, name='proj')
 
     def call(self, x, training=False):
         """Tokenize mel spectrogram.
@@ -74,11 +75,11 @@ class MelDetokenizer(tf.keras.layers.Layer):
         ]
         self.blocks = []
         for i in range(n):
-            up = tf.keras.layers.UpSampling1D(size=2)
-            conv = CausalConv1D(filters[i], kernel_size=3)
-            norm = tf.keras.layers.LayerNormalization()
+            up = tf.keras.layers.UpSampling1D(size=2, name=f'up_{i}')
+            conv = CausalConv1D(filters[i], kernel_size=3, name=f'conv_{i}')
+            norm = tf.keras.layers.LayerNormalization(name=f'norm_{i}')
             self.blocks.append((up, conv, norm))
-        self.proj = tf.keras.layers.Dense(N_MELS)
+        self.proj = tf.keras.layers.Dense(N_MELS, name='proj')
 
     def call(self, x, target_length=None, training=False):
         """Detokenize tokens to mel spectrogram.
@@ -105,12 +106,12 @@ class LatentEncoder(tf.keras.Model):
 
     def __init__(self, latent_dim=LATENT_DIM):
         super().__init__()
-        self.conv1 = tf.keras.layers.Conv1D(128, 5, strides=2, padding="same", activation="gelu")
-        self.conv2 = tf.keras.layers.Conv1D(256, 5, strides=2, padding="same", activation="gelu")
-        self.pool = tf.keras.layers.GlobalAveragePooling1D()
-        self.dense = tf.keras.layers.Dense(256, activation="gelu")
-        self.z_mean_head = tf.keras.layers.Dense(latent_dim)
-        self.z_logvar_head = tf.keras.layers.Dense(latent_dim)
+        self.conv1 = tf.keras.layers.Conv1D(128, 5, strides=2, padding="same", activation="gelu", name="conv1")
+        self.conv2 = tf.keras.layers.Conv1D(256, 5, strides=2, padding="same", activation="gelu", name="conv2")
+        self.pool = tf.keras.layers.GlobalAveragePooling1D(name="pool")
+        self.dense = tf.keras.layers.Dense(256, activation="gelu", name="dense")
+        self.z_mean_head = tf.keras.layers.Dense(latent_dim, name="z_mean")
+        self.z_logvar_head = tf.keras.layers.Dense(latent_dim, name="z_logvar")
 
     def call(self, mel, training=False):
         """Encode mel sequence to z, z_mean, z_logvar.
@@ -164,25 +165,25 @@ class MelGenerator(tf.keras.Model):
         )
         
         # Learned tokenizer/detokenizer replace input_proj/output_proj
-        self.tokenizer = MelTokenizer()
-        self.detokenizer = MelDetokenizer()
+        self.tokenizer = MelTokenizer(name='mel_tokenizer')
+        self.detokenizer = MelDetokenizer(name='mel_detokenizer')
         
         # Dynamic causal conv stack from config
         self.conv_layers = [
-            CausalConvBlock(D_MODEL, kernel_size=3, dilation_rate=d, residual=True)
-            for d in CONV_DILATION_RATES
+            CausalConvBlock(D_MODEL, kernel_size=3, dilation_rate=d, residual=True, name=f'conv_block_{i}')
+            for i, d in enumerate(CONV_DILATION_RATES)
         ]
         
         # Transformer stack with explicit layers and increasing window sizes
-        self.transformer1 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[0])
-        self.transformer2 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[1])
-        self.transformer3 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[2])
+        self.transformer1 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[0], name='transformer_0')
+        self.transformer2 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[1], name='transformer_1')
+        self.transformer3 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[2], name='transformer_2')
         
         # Latent conditioning projection
-        self.z_proj = tf.keras.layers.Dense(D_MODEL)
+        self.z_proj = tf.keras.layers.Dense(D_MODEL, name='z_proj')
         
         # Token-space projection head for forward_tokens()
-        self.projection_head = tf.keras.layers.Dense(D_MODEL)
+        self.projection_head = tf.keras.layers.Dense(D_MODEL, name='projection_head')
     
     def call(self, mel, z=None, training=False):
         """Forward pass (parallel processing for training).

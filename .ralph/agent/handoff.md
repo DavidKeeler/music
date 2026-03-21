@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-03-20 01:33:56 UTC_
+_Generated: 2026-03-20 04:03:59 UTC_
 
 ## Git Context
 
 - **Branch:** `main`
-- **HEAD:** 9a997f6: chore: auto-commit before merge (loop primary)
+- **HEAD:** 565dd77: chore: auto-commit before merge (loop primary)
 
 ## Tasks
 
@@ -146,6 +146,15 @@ _Generated: 2026-03-20 01:33:56 UTC_
 - [x] Step 5: Update train.py - simplify loss to direct MSE, token-space scheduled sampling
 - [x] Step 6: Rewrite MelGenerator.generate() for token-space autoregression
 - [x] Step 7: Final cleanup - remove all grouped-mel references, update docstrings, validate
+- [x] Step 1: Add forward_tokens() and projection head to MelGenerator
+- [x] Step 2: Update MelDetokenizer with UpSampling1D and target_length trimming
+- [x] Step 3: Update MelTokenizer with input padding to next multiple of C
+- [x] Step 4: Wire padding/trimming through call() and forward_from_tokens()
+- [x] Step 5: Rewrite generate() for token-space autoregression
+- [x] Step 6: Update training - loss, scheduled sampling, latent encoder
+- [x] Step 7: Simplify dataset - remove truncation and target shift
+- [x] Step 8: Update test mocks and assertions
+- [x] Step 9: Add new test cases for token-space correctness
 
 
 ## Key Files
@@ -159,9 +168,9 @@ Recently modified:
 - `.ralph/agent/tasks.jsonl`
 - `.ralph/current-events`
 - `.ralph/current-loop-id`
-- `.ralph/events-20260320-003759.jsonl`
+- `.ralph/events-20260320-021759.jsonl`
+- `.ralph/events-20260320-034216.jsonl`
 - `.ralph/history.jsonl`
-- `.ralph/loop.lock`
 
 ## Next Session
 
@@ -170,15 +179,15 @@ Session completed successfully. No pending work.
 **Original objective:**
 
 ```
-# PROMPT.md — Learned Continuous Mel Tokens
+# Token-Space Autoregressive Refactor
 
 ## Objective
 
-Refactor the TensorFlow mel spectrogram generator to replace fixed reduction-factor frame grouping with a learned tokenizer/detokenizer architecture. The model operates on compressed continuous latent tokens and reconstructs full-resolution mel spectrograms.
+Fix autoregressive correctness in the mel generator by eliminating mel↔token roundtrips in generation and training. Add `forward_tokens()` as the core token-space primitive. Simplify loss and dataset.
 
-## Spec Directory
+## Key Requirements
 
-All design artifacts are in `specs/learned-mel-tokens/`:
-- `design.md` — full architecture, component interfaces, data models
-- `plan.md` — 7-step increment...
+- Add `forward_tokens()` method with `Dense(D_MODEL)` projection head returning `[B, T_tok, D_MODEL]`
+- Generation loop: tokenize seed once → autoregress via `forward_tokens()` → detokenize once at end
+- Scheduled samp...
 ```

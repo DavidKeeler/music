@@ -17,7 +17,8 @@ class CausalConv1D(tf.keras.layers.Layer):
         self.dilation_rate = dilation_rate
         self.padding = (kernel_size - 1) * dilation_rate
         self.conv = tf.keras.layers.Conv1D(
-            filters, kernel_size, dilation_rate=dilation_rate, padding='valid'
+            filters, kernel_size, dilation_rate=dilation_rate, padding='valid',
+            name='conv'
         )
     
     def call(self, x):
@@ -40,9 +41,9 @@ class CausalConvBlock(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.filters = filters
         self.residual = residual
-        self.conv = CausalConv1D(filters, kernel_size, dilation_rate)
-        self.norm = tf.keras.layers.LayerNormalization()
-        self.activation = tf.keras.layers.Activation('gelu')
+        self.conv = CausalConv1D(filters, kernel_size, dilation_rate, name='causal_conv')
+        self.norm = tf.keras.layers.LayerNormalization(name='norm')
+        self.activation = tf.keras.layers.Activation('gelu', name='act')
     
     def call(self, x):
         """Apply causal conv block.
@@ -79,8 +80,8 @@ class LocalWindowAttention(tf.keras.layers.Layer):
         
         assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
         
-        self.qkv = tf.keras.layers.Dense(3 * d_model)
-        self.out_proj = tf.keras.layers.Dense(d_model)
+        self.qkv = tf.keras.layers.Dense(3 * d_model, name='qkv')
+        self.out_proj = tf.keras.layers.Dense(d_model, name='out_proj')
         
         # Learned relative position bias [num_heads, window_size]
         self.relative_position_bias = self.add_weight(
@@ -151,14 +152,14 @@ class TransformerBlock(tf.keras.layers.Layer):
         if ffn_hidden_dim is None:
             ffn_hidden_dim = 4 * d_model
         
-        self.attn = LocalWindowAttention(d_model, num_heads, window_size)
-        self.norm1 = tf.keras.layers.LayerNormalization()
+        self.attn = LocalWindowAttention(d_model, num_heads, window_size, name='attn')
+        self.norm1 = tf.keras.layers.LayerNormalization(name='norm1')
         
         self.ffn = tf.keras.Sequential([
-            tf.keras.layers.Dense(ffn_hidden_dim, activation='gelu'),
-            tf.keras.layers.Dense(d_model)
-        ])
-        self.norm2 = tf.keras.layers.LayerNormalization()
+            tf.keras.layers.Dense(ffn_hidden_dim, activation='gelu', name='ffn_up'),
+            tf.keras.layers.Dense(d_model, name='ffn_down')
+        ], name='ffn')
+        self.norm2 = tf.keras.layers.LayerNormalization(name='norm2')
     
     def call(self, x):
         """Apply transformer block.

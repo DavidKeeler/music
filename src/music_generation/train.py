@@ -296,21 +296,16 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
     
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / "mel_generator.keras"
+    checkpoint_path = checkpoint_dir / "mel_generator.weights.h5"
     
-    if resume_from:
-        print(f"Resuming from {resume_from}")
-        model.load_weights(resume_from)
-    elif checkpoint_path.exists():
-        print(f"Auto-resuming from {checkpoint_path}")
-        try:
-            model.load_weights(str(checkpoint_path))
-        except (ValueError, Exception) as e:
-            print(f"⚠ Could not load checkpoint (architecture changed?): {e}")
-            print("Training from scratch.")
+    resume_path = resume_from or (str(checkpoint_path) if checkpoint_path.exists() else None)
+    if resume_path:
+        print(f"Resuming from {resume_path}")
+        model.load_weights(str(resume_path))
+        print("✓ Weights loaded")
     
     callbacks = [
-        tf.keras.callbacks.ModelCheckpoint(str(checkpoint_path), save_weights_only=False, save_freq='epoch'),
+        tf.keras.callbacks.ModelCheckpoint(str(checkpoint_path), save_weights_only=True, save_freq='epoch'),
         tf.keras.callbacks.TensorBoard(log_dir=checkpoint_dir / "logs"),
     ]
     

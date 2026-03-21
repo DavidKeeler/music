@@ -64,7 +64,7 @@ BATCH_SIZE = 4
 SEQ_LEN = 512
 # Initial learning rate (with warmup + cosine decay)
 LEARNING_RATE = 1e-4
-# Number of training epochs (reduced from 20 to 3 for faster iteration on CPU)
+
 NUM_EPOCHS = 3
 
 # Learned Tokenizer Configuration
@@ -89,7 +89,7 @@ MIN_TF_RATIO = 0.05
 # Exponential decay rate (k in ε(step) = max(ε_min, ε_initial * exp(-k * step)))
 TF_DECAY_K = 5e-7
 # Warmup steps before decay starts (ratio stays at INITIAL_TF_RATIO)
-TF_WARMUP_STEPS = 500000
+TF_WARMUP_STEPS = 20000
 
 # Inference Parameters
 # Temperature for sampling (1.0 = no scaling)
