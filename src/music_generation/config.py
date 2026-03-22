@@ -81,15 +81,19 @@ TOKEN_NUM_CONV_LAYERS = int(math.log2(TOKEN_COMPRESSION_RATIO))
 # Token sequence length after compression
 TOKEN_SEQ_LEN = SEQ_LEN // TOKEN_COMPRESSION_RATIO  # 512 // 4 = 128
 
+# Pose Conditioning
+POSE_FEATURE_DIM = 85
+POSE_EMBEDDING_DIM = 128
+
 # Teacher Forcing Schedule Parameters
 # Initial teacher forcing ratio (1.0 = always use ground truth)
 INITIAL_TF_RATIO = 1.0
 # Minimum teacher forcing ratio (floor for exponential decay)
 MIN_TF_RATIO = 0.05
 # Exponential decay rate (k in ε(step) = max(ε_min, ε_initial * exp(-k * step)))
-TF_DECAY_K = 5e-7
+TF_DECAY_K = 7e-7
 # Warmup steps before decay starts (ratio stays at INITIAL_TF_RATIO)
-TF_WARMUP_STEPS = 20000
+TF_WARMUP_STEPS = 50000
 
 # Inference Parameters
 # Temperature for sampling (1.0 = no scaling)
