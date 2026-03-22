@@ -1,15 +1,18 @@
 """Mel generator model."""
 
 import tensorflow as tf
+import keras
 from src.music_generation.config import (
     D_MODEL, NUM_HEADS, N_MELS, WINDOW_SIZES,
     CONV_DILATION_RATES, FRAME_STEP, SAMPLE_RATE,
     LATENT_DIM, TOKEN_COMPRESSION_RATIO, TOKEN_NUM_CONV_LAYERS,
-    TOKEN_SEQ_LEN
+    TOKEN_SEQ_LEN, POSE_FEATURE_DIM, POSE_EMBEDDING_DIM
 )
 from src.music_generation.layers import CausalConvBlock, CausalConv1D, TransformerBlock
+from src.body_point_module.encoder import build_temporal_pose_encoder
 
 
+@keras.saving.register_keras_serializable()
 class MelTokenizer(tf.keras.layers.Layer):
     """Causal strided Conv1D encoder: [B, T, N_MELS] -> [B, ceil(T/C), D_MODEL].
 
@@ -58,6 +61,7 @@ class MelTokenizer(tf.keras.layers.Layer):
         return self.proj(x)
 
 
+@keras.saving.register_keras_serializable()
 class MelDetokenizer(tf.keras.layers.Layer):
     """Causal upsampling decoder: [B, T_tok, D_MODEL] -> [B, T_tok*C, N_MELS].
 
@@ -101,6 +105,7 @@ class MelDetokenizer(tf.keras.layers.Layer):
         return x
 
 
+@keras.saving.register_keras_serializable()
 class LatentEncoder(tf.keras.Model):
     """VAE-style encoder: mel sequence -> global latent vector z."""
 
@@ -134,6 +139,7 @@ class LatentEncoder(tf.keras.Model):
 
 
 
+@keras.saving.register_keras_serializable()
 class MelGenerator(tf.keras.Model):
     """Autoregressive mel spectrogram generator with learned tokenizer/detokenizer.
     
@@ -147,8 +153,8 @@ class MelGenerator(tf.keras.Model):
     Supports both parallel forward pass (training) and autoregressive generation (inference).
     """
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         
         import logging
         
@@ -176,21 +182,33 @@ class MelGenerator(tf.keras.Model):
         
         # Transformer stack with explicit layers and increasing window sizes
         self.transformer1 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[0], name='transformer_0')
-        self.transformer2 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[1], name='transformer_1')
-        self.transformer3 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[2], name='transformer_2')
+        self.transformer2 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[1], enable_cross_attn=True, name='transformer_1')
+        self.transformer3 = TransformerBlock(D_MODEL, NUM_HEADS, window_size=WINDOW_SIZES[2], enable_cross_attn=True, name='transformer_2')
         
         # Latent conditioning projection
         self.z_proj = tf.keras.layers.Dense(D_MODEL, name='z_proj')
         
         # Token-space projection head for forward_tokens()
         self.projection_head = tf.keras.layers.Dense(D_MODEL, name='projection_head')
+        
+        # Pose conditioning
+        self.pose_encoder = build_temporal_pose_encoder(
+            input_dim=POSE_FEATURE_DIM, output_dim=POSE_EMBEDDING_DIM
+        )
+        self.pose_proj = tf.keras.layers.Dense(D_MODEL, name='pose_proj')
+        self.pose_stride_conv = tf.keras.layers.Conv1D(
+            D_MODEL, kernel_size=TOKEN_COMPRESSION_RATIO,
+            strides=TOKEN_COMPRESSION_RATIO, padding='same', name='pose_stride_conv'
+        )
+        self.pose_alpha = tf.Variable(0.0, trainable=False, dtype=tf.float32, name='pose_alpha')
     
-    def call(self, mel, z=None, training=False):
+    def call(self, mel, z=None, pose=None, training=False):
         """Forward pass (parallel processing for training).
         
         Args:
             mel: Input mel spectrogram [B, T, N_MELS] — T can be any length
             z: Optional latent vector [B, latent_dim]. If None, sampled from N(0,1).
+            pose: Optional pose features [B, T, POSE_FEATURE_DIM]. If None, no conditioning.
             training: Whether in training mode
         
         Returns:
@@ -198,15 +216,23 @@ class MelGenerator(tf.keras.Model):
         """
         original_T = tf.shape(mel)[1]
         tokens = self.tokenizer(mel, training=training)
-        token_preds = self.forward_tokens(tokens, z=z, training=training)
+        
+        pose_embedded = None
+        if pose is not None:
+            pose_embedded = self.pose_encoder(pose, training=training)
+            pose_embedded = self.pose_proj(pose_embedded)
+            pose_embedded = self.pose_stride_conv(pose_embedded)
+        
+        token_preds = self.forward_tokens(tokens, z=z, pose_embedded=pose_embedded, training=training)
         return self.detokenizer(token_preds, target_length=original_T, training=training)
     
-    def forward_tokens(self, tokens, z=None, training=False):
+    def forward_tokens(self, tokens, z=None, pose_embedded=None, training=False):
         """Token-space forward pass — stops before detokenizer.
         
         Args:
             tokens: [B, T_tok, D_MODEL]
             z: Optional latent vector [B, latent_dim]. If None, sampled from N(0,1).
+            pose_embedded: Optional pre-processed pose [B, T_tok, D_MODEL]. If None, no conditioning.
             training: Whether in training mode
         
         Returns:
@@ -227,26 +253,27 @@ class MelGenerator(tf.keras.Model):
             x = conv(x, training=training)
         
         x = self.transformer1(x)
-        x = self.transformer2(x)
-        x = self.transformer3(x)
+        x = self.transformer2(x, cross_attn_kv=pose_embedded, cross_attn_alpha=self.pose_alpha)
+        x = self.transformer3(x, cross_attn_kv=pose_embedded, cross_attn_alpha=self.pose_alpha)
         
         return self.projection_head(x)
     
-    def forward_from_tokens(self, tokens, z=None, training=False):
+    def forward_from_tokens(self, tokens, z=None, pose_embedded=None, training=False):
         """Forward pass from pre-tokenized input (for scheduled sampling).
         
         Args:
             tokens: [B, T_tok, D_MODEL] pre-tokenized input
             z: Optional latent vector [B, latent_dim]
+            pose_embedded: Optional pre-processed pose [B, T_tok, D_MODEL]
             training: Whether in training mode
         
         Returns:
             Output mel spectrogram [B, T_tok * TOKEN_COMPRESSION_RATIO, N_MELS]
         """
-        token_preds = self.forward_tokens(tokens, z=z, training=training)
+        token_preds = self.forward_tokens(tokens, z=z, pose_embedded=pose_embedded, training=training)
         return self.detokenizer(token_preds, training=training)
     
-    def generate(self, seed_mel, num_frames, temperature=1.0, top_p=0.9, z=None):
+    def generate(self, seed_mel, num_frames, temperature=1.0, top_p=0.9, z=None, pose=None):
         """Autoregressive generation in token space.
         
         Tokenizes seed once, loops via forward_tokens() (no mel roundtrips),
@@ -258,6 +285,7 @@ class MelGenerator(tf.keras.Model):
             temperature: Temperature scaling for noise
             top_p: Nucleus sampling threshold (unused for continuous values)
             z: Optional latent vector [1, latent_dim]
+            pose: Optional pose features [1, T, POSE_FEATURE_DIM]
         
         Returns:
             Generated mel spectrogram [num_frames, N_MELS]
@@ -266,6 +294,13 @@ class MelGenerator(tf.keras.Model):
         
         if z is None:
             z = tf.random.normal([1, LATENT_DIM])
+        
+        # Pre-process pose if provided
+        pose_embedded = None
+        if pose is not None:
+            pe = self.pose_encoder(pose, training=False)
+            pe = self.pose_proj(pe)
+            pose_embedded = self.pose_stride_conv(pe)
         
         # Tokenize seed once (only tokenizer call)
         seed_tokens = self.tokenizer(seed_mel[None], training=False)
@@ -282,7 +317,7 @@ class MelGenerator(tf.keras.Model):
                 context = context[-TOKEN_SEQ_LEN:]
             
             # Forward pass entirely in token space — no mel roundtrip
-            pred_tokens = self.forward_tokens(context[None], z=z, training=False)
+            pred_tokens = self.forward_tokens(context[None], z=z, pose_embedded=pose_embedded, training=False)
             next_token = pred_tokens[0, -1:]  # [1, D_MODEL]
             
             if temperature > 0.0:
