@@ -3,9 +3,10 @@ import tensorflow as tf
 from pathlib import Path
 import json
 import logging
+import numpy as np
 
 from .audio_utils import load_audio, audio_to_mel, normalize_mel
-from .config import SEQ_LEN, N_MELS
+from .config import SEQ_LEN, N_MELS, POSE_FEATURE_DIM
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,31 @@ class MusicNetDataset:
                 
                 yield input_mel.numpy(), input_mel.numpy()
     
+    def _pose_generator(self):
+        """Generator yielding (mel, mel, pose) triples for files with matching pose data."""
+        for file_idx in self.file_indices:
+            audio_file = self.audio_files[file_idx]
+            pose_file = audio_file.parent / f"{audio_file.stem}_pose.npy"
+
+            if not pose_file.exists():
+                logger.warning(f"No pose file for {audio_file.name}, skipping")
+                continue
+
+            mel = self._load_or_compute_mel(audio_file)
+            pose = np.load(pose_file).astype(np.float32)
+            mel_length = mel.shape[0]
+
+            # Align lengths
+            min_len = min(mel_length, pose.shape[0])
+            if min_len < SEQ_LEN:
+                continue
+
+            stride = SEQ_LEN // 2
+            for start in range(0, min_len - SEQ_LEN + 1, stride):
+                m = mel[start:start + SEQ_LEN]
+                p = pose[start:start + SEQ_LEN]
+                yield m.numpy(), m.numpy(), p
+
     def __len__(self) -> int:
         """Return approximate number of sequences."""
         return len(self.file_indices) * 10  # Rough estimate
@@ -181,4 +207,40 @@ def create_dataset(data_dir: str, cache_dir: str, batch_size: int, shuffle: bool
     ds = ds.batch(batch_size)
     ds = ds.prefetch(tf.data.AUTOTUNE)
     
+    return ds, steps_per_epoch
+
+
+def create_pose_dataset(data_dir: str, cache_dir: str, batch_size: int, shuffle: bool = True):
+    """Create tf.data.Dataset yielding (mel, mel, pose) triples.
+
+    Only includes audio files that have a matching ``{stem}_pose.npy``.
+
+    Returns:
+        Tuple of (tf.data.Dataset, steps_per_epoch).
+    """
+    dataset_obj = MusicNetDataset(Path(data_dir), Path(cache_dir))
+
+    def _make_ds():
+        return tf.data.Dataset.from_generator(
+            dataset_obj._pose_generator,
+            output_signature=(
+                tf.TensorSpec(shape=(SEQ_LEN, N_MELS), dtype=tf.float32),
+                tf.TensorSpec(shape=(SEQ_LEN, N_MELS), dtype=tf.float32),
+                tf.TensorSpec(shape=(SEQ_LEN, POSE_FEATURE_DIM), dtype=tf.float32),
+            )
+        )
+
+    num_samples = _make_ds().reduce(0, lambda count, _: count + 1).numpy()
+    if num_samples == 0:
+        raise ValueError(f"No audio files with matching _pose.npy found in {data_dir}")
+    steps_per_epoch = max(1, num_samples // batch_size)
+    logger.info(f"Pose dataset: {num_samples} samples, {steps_per_epoch} steps/epoch (batch_size={batch_size})")
+
+    ds = _make_ds()
+    if shuffle:
+        ds = ds.shuffle(1000)
+    ds = ds.repeat()
+    ds = ds.batch(batch_size)
+    ds = ds.prefetch(tf.data.AUTOTUNE)
+
     return ds, steps_per_epoch
