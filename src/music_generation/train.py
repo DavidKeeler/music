@@ -2,6 +2,7 @@
 import argparse
 import logging
 import tensorflow as tf
+import keras
 from pathlib import Path
 import psutil
 
@@ -12,7 +13,8 @@ from .config import (
     N_MELS, KL_BETA
 )
 from .dataset import create_dataset
-from .model import MelGenerator, LatentEncoder
+from .model import MelGenerator, MelTokenizer, MelDetokenizer, LatentEncoder
+from .layers import CausalConv1D, CausalConvBlock, LocalWindowAttention, TransformerBlock
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,7 @@ def check_batch_size(batch_size):
 
 
 
+@keras.saving.register_keras_serializable()
 class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     """Learning rate schedule with linear warmup and cosine decay."""
     
@@ -99,6 +102,7 @@ class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         }
 
 
+@keras.saving.register_keras_serializable()
 class MelGeneratorTraining(tf.keras.Model):
     """Simplified training wrapper with parallel processing."""
     
@@ -296,16 +300,36 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
     
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / "mel_generator.weights.h5"
+    checkpoint_path = checkpoint_dir / "mel_generator.keras"
     
     resume_path = resume_from or (str(checkpoint_path) if checkpoint_path.exists() else None)
     if resume_path:
         print(f"Resuming from {resume_path}")
-        model.load_weights(str(resume_path))
-        print("✓ Weights loaded")
+        if resume_path.endswith('.keras'):
+            custom_objs = {
+                'MelGeneratorTraining': MelGeneratorTraining,
+                'WarmupCosineSchedule': WarmupCosineSchedule,
+                'MelGenerator': MelGenerator,
+                'MelTokenizer': MelTokenizer,
+                'MelDetokenizer': MelDetokenizer,
+                'LatentEncoder': LatentEncoder,
+                'CausalConv1D': CausalConv1D,
+                'CausalConvBlock': CausalConvBlock,
+                'LocalWindowAttention': LocalWindowAttention,
+                'TransformerBlock': TransformerBlock,
+            }
+            with tf.keras.utils.custom_object_scope(custom_objs):
+                model = tf.keras.models.load_model(resume_path)
+            # Override schedule params with current config values
+            model.decay_k = TF_DECAY_K
+            model.min_tf_ratio = MIN_TF_RATIO
+            print(f"✓ Full model loaded (weights + optimizer state, decay_k={TF_DECAY_K})")
+        else:
+            model.load_weights(str(resume_path))
+            print("✓ Weights loaded (no optimizer state)")
     
     callbacks = [
-        tf.keras.callbacks.ModelCheckpoint(str(checkpoint_path), save_weights_only=True, save_freq='epoch'),
+        tf.keras.callbacks.ModelCheckpoint(str(checkpoint_path), save_weights_only=False, save_freq='epoch'),
         tf.keras.callbacks.TensorBoard(log_dir=checkpoint_dir / "logs"),
     ]
     
@@ -315,7 +339,9 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
     print("Validating checkpoint...")
     if checkpoint_path.exists():
         print(f"✓ Checkpoint saved successfully: {checkpoint_path}")
-        print(f"  Checkpoint size: {checkpoint_path.stat().st_size / (1024*1024):.2f} MB")
+        size = checkpoint_path.stat().st_size if checkpoint_path.is_file() else sum(
+            f.stat().st_size for f in checkpoint_path.rglob('*') if f.is_file())
+        print(f"  Checkpoint size: {size / (1024*1024):.2f} MB")
     else:
         print(f"✗ Checkpoint not found at {checkpoint_path}")
         raise FileNotFoundError(f"Expected checkpoint at {checkpoint_path}")

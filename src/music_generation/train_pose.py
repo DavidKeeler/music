@@ -217,12 +217,11 @@ def load_checkpoint_with_autodetect(model, checkpoint_path):
     except Exception:
         pass
 
-    # Try loading as Phase 1 (audio-only) — match weights by name, skip missing
+    # Try loading as Phase 1 (audio-only) full model
     logger.info("Attempting Phase 1 (audio-only) checkpoint load with partial weight matching")
     try:
         with tf.keras.utils.custom_object_scope(custom_objs):
             loaded = tf.keras.models.load_model(checkpoint_path)
-        # Extract base_model weights from the loaded MelGeneratorTraining
         source = loaded.base_model if hasattr(loaded, 'base_model') else loaded
         _copy_matching_weights(source, model.base_model)
         logger.info("Phase 1 checkpoint loaded — new pose layers initialized from scratch")
@@ -230,23 +229,48 @@ def load_checkpoint_with_autodetect(model, checkpoint_path):
     except Exception as e:
         logger.warning(f"Full model load failed ({e}), trying weights-only")
 
-    # Fallback: weights-only load with skip_mismatch
+    # Fallback: build a temporary Phase 1 model, load weights, then copy
     try:
-        model.base_model.load_weights(checkpoint_path, skip_mismatch=True)
-        logger.info("Weights loaded with skip_mismatch — new layers initialized from scratch")
-    except Exception:
+        tmp_base = MelGenerator()
+        tmp_wrapper = MelGeneratorTraining(tmp_base)
+        # Build with same input shape
+        dummy = tf.zeros([1, 64, N_MELS])
+        _ = tmp_wrapper(dummy, training=False)
+        tmp_wrapper.load_weights(checkpoint_path)
+        _copy_matching_weights(tmp_base, model.base_model)
+        logger.info("Phase 1 weights loaded via temporary model — new pose layers initialized from scratch")
+        return model
+    except Exception as e:
+        logger.warning(f"Temporary model load failed ({e}), trying direct skip_mismatch")
+
+    # Last resort: direct load with skip_mismatch
+    try:
         model.load_weights(checkpoint_path, skip_mismatch=True)
-        logger.info("Full wrapper weights loaded with skip_mismatch")
+        logger.info("Weights loaded with skip_mismatch")
+    except Exception:
+        logger.warning("All checkpoint loading methods failed — starting from scratch")
 
     return model
 
 
+def _normalize_var_path(var):
+    """Normalize variable path by stripping wrapper prefix and mel_generator suffix number."""
+    import re
+    p = var.path
+    # Extract path from mel_generator onwards, normalizing mel_generator_N to mel_generator
+    match = re.search(r'mel_generator(?:_\d+)?/(.*)', p)
+    if match:
+        return match.group(1)
+    return p
+
+
 def _copy_matching_weights(source_model, target_model):
-    """Copy weights from source to target by variable name, skipping mismatches."""
-    source_map = {v.name: v for v in source_model.variables}
+    """Copy weights from source to target by normalized path, skipping mismatches."""
+    source_map = {_normalize_var_path(v): v for v in source_model.variables}
     matched, skipped = 0, 0
     for tv in target_model.variables:
-        sv = source_map.get(tv.name)
+        key = _normalize_var_path(tv)
+        sv = source_map.get(key)
         if sv is not None and sv.shape == tv.shape:
             tv.assign(sv)
             matched += 1
