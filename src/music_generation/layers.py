@@ -1,9 +1,11 @@
 """Custom Keras layers for mel generation."""
 
 import tensorflow as tf
+import keras
 import math
 
 
+@keras.saving.register_keras_serializable()
 class CausalConv1D(tf.keras.layers.Layer):
     """Causal 1D convolution with left-only padding.
     
@@ -34,6 +36,7 @@ class CausalConv1D(tf.keras.layers.Layer):
         return self.conv(x)
 
 
+@keras.saving.register_keras_serializable()
 class CausalConvBlock(tf.keras.layers.Layer):
     """Causal convolution block with normalization and activation."""
     
@@ -144,16 +147,25 @@ class LocalWindowAttention(tf.keras.layers.Layer):
         return self.out_proj(out)
 
 
+@keras.saving.register_keras_serializable()
 class TransformerBlock(tf.keras.layers.Layer):
     """Transformer block with local window attention and feed-forward network."""
     
-    def __init__(self, d_model, num_heads, window_size=128, ffn_hidden_dim=None, **kwargs):
+    def __init__(self, d_model, num_heads, window_size=128, ffn_hidden_dim=None,
+                 enable_cross_attn=False, **kwargs):
         super().__init__(**kwargs)
+        self.enable_cross_attn = enable_cross_attn
         if ffn_hidden_dim is None:
             ffn_hidden_dim = 4 * d_model
         
         self.attn = LocalWindowAttention(d_model, num_heads, window_size, name='attn')
         self.norm1 = tf.keras.layers.LayerNormalization(name='norm1')
+        
+        if enable_cross_attn:
+            self.cross_attn = tf.keras.layers.MultiHeadAttention(
+                num_heads=num_heads, key_dim=d_model // num_heads, name='cross_attn'
+            )
+            self.cross_attn_norm = tf.keras.layers.LayerNormalization(name='cross_attn_norm')
         
         self.ffn = tf.keras.Sequential([
             tf.keras.layers.Dense(ffn_hidden_dim, activation='gelu', name='ffn_up'),
@@ -161,19 +173,33 @@ class TransformerBlock(tf.keras.layers.Layer):
         ], name='ffn')
         self.norm2 = tf.keras.layers.LayerNormalization(name='norm2')
     
-    def call(self, x):
+    def call(self, x, cross_attn_kv=None, cross_attn_alpha=None):
         """Apply transformer block.
         
         Args:
             x: Input tensor [batch, seq_len, d_model]
+            cross_attn_kv: Optional key/value tensor for cross-attention [batch, kv_len, d_model]
+            cross_attn_alpha: Optional scalar gating cross-attention contribution
         
         Returns:
             Output tensor [batch, seq_len, d_model]
         """
-        # Attention with residual
+        # Self-attention with residual
         x = x + self.attn(self.norm1(x))
+        
+        # Cross-attention (only when layer was built with it AND kv is provided)
+        if self.enable_cross_attn and cross_attn_kv is not None:
+            alpha = cross_attn_alpha if cross_attn_alpha is not None else 1.0
+            x = x + alpha * self.cross_attn(
+                query=self.cross_attn_norm(x), key=cross_attn_kv, value=cross_attn_kv
+            )
         
         # FFN with residual
         x = x + self.ffn(self.norm2(x))
         
         return x
+    
+    def get_config(self):
+        config = super().get_config()
+        config['enable_cross_attn'] = self.enable_cross_attn
+        return config
