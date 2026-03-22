@@ -1,4 +1,4 @@
-"""Vocoder loss components for HiFi-GAN fine-tuning."""
+"""Loss components for vocoder fine-tuning and pose-audio alignment."""
 
 import tensorflow as tf
 
@@ -142,3 +142,72 @@ class SubBandSTFTLoss(tf.keras.layers.Layer):
             total_loss += loss
             
         return total_loss / self.num_bands
+
+
+class PoseAudioAlignmentLoss(tf.keras.layers.Layer):
+    """Pose velocity ↔ spectral flux alignment loss.
+
+    Computes L1 between normalized pose velocity magnitude and normalized
+    spectral flux. Not wired into training — call manually for analysis.
+    """
+
+    def call(self, pose_features, mel_spectrogram):
+        """
+        Args:
+            pose_features: [B, T, 85] — (x, y, dx, dy, conf) × 17 joints
+            mel_spectrogram: [B, T, N_MELS]
+        Returns:
+            Scalar loss.
+        """
+        # Pose velocity: extract dx, dy (indices 2,3 per joint, stride 5)
+        dx = pose_features[:, :, 2::5]  # [B, T, 17]
+        dy = pose_features[:, :, 3::5]  # [B, T, 17]
+        velocity_mag = tf.reduce_mean(tf.sqrt(dx ** 2 + dy ** 2 + 1e-8), axis=-1)  # [B, T]
+
+        # Spectral flux: L1 diff of mel along time
+        flux = tf.reduce_mean(tf.abs(mel_spectrogram[:, 1:] - mel_spectrogram[:, :-1]), axis=-1)  # [B, T-1]
+        velocity_mag = velocity_mag[:, 1:]  # align lengths
+
+        # Normalize each to [0, 1] range per sample
+        def _norm(x):
+            x_min = tf.reduce_min(x, axis=-1, keepdims=True)
+            x_max = tf.reduce_max(x, axis=-1, keepdims=True)
+            return (x - x_min) / (x_max - x_min + 1e-8)
+
+        return tf.reduce_mean(tf.abs(_norm(velocity_mag) - _norm(flux)))
+
+
+class OnsetAlignmentLoss(tf.keras.layers.Layer):
+    """Pose acceleration ↔ audio onset strength alignment loss.
+
+    Computes L1 between normalized pose acceleration magnitude and
+    normalized onset strength (half-wave rectified spectral flux).
+    Not wired into training — call manually for analysis.
+    """
+
+    def call(self, pose_features, mel_spectrogram):
+        """
+        Args:
+            pose_features: [B, T, 85]
+            mel_spectrogram: [B, T, N_MELS]
+        Returns:
+            Scalar loss.
+        """
+        # Pose acceleration: second difference of position (x, y)
+        x_pos = pose_features[:, :, 0::5]  # [B, T, 17]
+        y_pos = pose_features[:, :, 1::5]  # [B, T, 17]
+        pos = tf.stack([x_pos, y_pos], axis=-1)  # [B, T, 17, 2]
+        accel = pos[:, 2:] - 2 * pos[:, 1:-1] + pos[:, :-2]  # [B, T-2, 17, 2]
+        accel_mag = tf.reduce_mean(tf.sqrt(tf.reduce_sum(accel ** 2, axis=-1) + 1e-8), axis=-1)  # [B, T-2]
+
+        # Onset strength: half-wave rectified spectral flux
+        flux = tf.reduce_mean(mel_spectrogram[:, 1:] - mel_spectrogram[:, :-1], axis=-1)  # [B, T-1]
+        onset = tf.nn.relu(flux)[:, 1:]  # [B, T-2] — align with accel
+
+        # Normalize to [0, 1] per sample, then L1
+        def _norm(x):
+            x_min = tf.reduce_min(x, axis=-1, keepdims=True)
+            x_max = tf.reduce_max(x, axis=-1, keepdims=True)
+            return (x - x_min) / (x_max - x_min + 1e-8)
+
+        return tf.reduce_mean(tf.abs(_norm(accel_mag) - _norm(onset)))
