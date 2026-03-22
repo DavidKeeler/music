@@ -2,6 +2,26 @@
 
 ## Patterns
 
+### mem-1774169156-c3b9
+> PoseAudioAlignmentLoss and OnsetAlignmentLoss in losses.py: both use normalized L1 between temporal signals. PoseAudio compares pose velocity (dx/dy features, stride 5) with spectral flux. Onset compares pose acceleration (2nd diff of x/y positions) with half-wave rectified spectral flux. Both return scalar, support gradients, zero for constant inputs. Not wired into training. Committed as e5f6b92.
+<!-- tags: pose, losses, tensorflow | created: 2026-03-22 -->
+
+### mem-1774168238-684f
+> train_pose.py: PoseConditionedTraining wrapper with cosine_alpha_schedule, apply_conditioning_dropout, load_checkpoint_with_autodetect. CLI supports --alpha_start/end/steps, --cond_dropout, --freeze_encoder, --freeze_early, --resume. Reuses WarmupCosineSchedule/exponential_tf_schedule from train.py. Pose encoded via base_model.pose_encoder/pose_proj/pose_stride_conv before passing as pose_embedded to forward_tokens. Committed as 5828ec4.
+<!-- tags: pose, training, tensorflow | created: 2026-03-22 -->
+
+### mem-1774167138-602b
+> create_pose_dataset in dataset.py: _pose_generator yields (mel, mel, pose) triples. Looks for {stem}_pose.npy alongside .wav files. Aligns pose/mel via min(mel_len, pose_len), skips files without pose (warning). Output shapes: (SEQ_LEN, N_MELS), (SEQ_LEN, N_MELS), (SEQ_LEN, POSE_FEATURE_DIM=85). Committed as 390dc92.
+<!-- tags: pose, dataset, tensorflow | created: 2026-03-22 -->
+
+### mem-1774165356-aea9
+> MelGenerator pose integration: pose=None on call/forward_tokens/forward_from_tokens/generate. Pose path: build_temporal_pose_encoder([B,T,85]->[B,T,128]) -> Dense(D_MODEL) -> Conv1D(stride=TOKEN_COMPRESSION_RATIO) -> cross_attn_kv in transformer2/transformer3. pose_alpha tf.Variable(0.0, trainable=False) gates contribution. transformer1 unconditional. Backward compatible: pose=None identical to before. Committed as 787b993.
+<!-- tags: pose, model, tensorflow | created: 2026-03-22 -->
+
+### mem-1774164011-99b6
+> build_temporal_pose_encoder added to encoder.py: [B,T,85]->[B,T,128], TimeDistributed MLP + causal Conv1D(kernel=3), variable-length via Input(shape=(None,input_dim)). POSE_FEATURE_DIM=85, POSE_EMBEDDING_DIM=128 added to config.py. Committed as 2ac1015.
+<!-- tags: pose, encoder, config, tensorflow | created: 2026-03-22 -->
+
 ### mem-1773979408-19ca
 > Steps 7-9 done: dataset already had no truncation and input==target (Step 7 was no-op). test_train.py mock updated with forward_tokens()+projection_head, test_training_smoke.py fixed N_MELS=100 and seq_len=12. 17 new tests in test_token_space.py cover all 8 acceptance criteria. 206 tests pass, 11 pre-existing vocoder failures. Committed as 031986d (Step 8) and d2f3731 (Step 9).
 <!-- tags: testing, tokenizer, tensorflow | created: 2026-03-20 -->
@@ -369,6 +389,10 @@
 ## Decisions
 
 ## Fixes
+
+### mem-1774170765-6820
+> load_checkpoint_with_autodetect fixed: _copy_matching_weights uses _normalize_var_path (strips wrapper prefix, normalizes mel_generator_N) instead of v.name (which is just 'kernel'/'bias'). .weights.h5 fallback builds temporary MelGeneratorTraining, loads weights, then copies via path matching. .keras path uses load_model + _copy_matching_weights. 81/93 audio weights transfer correctly for Phase 1->Phase 2. Committed as d441940.
+<!-- tags: checkpoint, pose, tensorflow | created: 2026-03-22 -->
 
 ### mem-1773469517-964f
 > madmom 0.16.1 on Python 3.12: requires numpy alias patches (np.int, np.float, np.bool etc removed in numpy 1.24+). Compiled Cython extensions (.pyx -> .so) can't be patched via sed, must monkey-patch numpy at runtime. Also needs collections.abc.MutableSequence fix in processors.py. downbeats.py line 287 needs [r[1] for r in results] instead of np.asarray(results)[:,1] for inhomogeneous arrays.

@@ -1,8 +1,8 @@
 # Loop Summary
 
 **Status:** Completed successfully
-**Iterations:** 1
-**Duration:** 21m 42s
+**Iterations:** 5
+**Duration:** 1h 39m 14s
 
 ## Tasks
 
@@ -14,4 +14,4 @@ _No events recorded._
 
 ## Final Commit
 
-d2f3731: Step 9: Add token-space correctness tests
+d441940: Fix checkpoint auto-detection for Phase 1 loading

@@ -1,5 +1,5 @@
 {
-  "pid": 1501,
-  "started": "2026-03-20T03:42:16.934089Z",
-  "prompt": "# Token-Space Autoregressive Refactor\n\n## Objective\n\nFix autoregressive correctness in the mel gene..."
+  "pid": 40432,
+  "started": "2026-03-22T07:34:24.154703Z",
+  "prompt": "# PROMPT.md — Pose-Conditioned Training\n\n## Objective\n\nIntegrate pose (body point) conditioning i..."
 }
