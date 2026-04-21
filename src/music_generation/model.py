@@ -29,16 +29,17 @@ class MelTokenizer(tf.keras.layers.Layer):
             N_MELS + (D_MODEL - N_MELS) * (i + 1) // n
             for i in range(n)
         ]
-        self.blocks = []
+        self._paddings = []
         for i in range(n):
             kernel_size = 3
             padding = kernel_size - 1  # causal left-pad for stride-2
-            conv = tf.keras.layers.Conv1D(
+            setattr(self, f'conv_{i}', tf.keras.layers.Conv1D(
                 filters[i], kernel_size, strides=2, padding='valid',
                 name=f'conv_{i}'
-            )
-            norm = tf.keras.layers.LayerNormalization(name=f'norm_{i}')
-            self.blocks.append((padding, conv, norm))
+            ))
+            setattr(self, f'norm_{i}', tf.keras.layers.LayerNormalization(name=f'norm_{i}'))
+            self._paddings.append(padding)
+        self._n = n
         self.proj = tf.keras.layers.Dense(D_MODEL, name='proj')
 
     def call(self, x, training=False):
@@ -53,10 +54,10 @@ class MelTokenizer(tf.keras.layers.Layer):
         C = TOKEN_COMPRESSION_RATIO
         pad_amount = (-tf.shape(x)[1]) % C
         x = tf.pad(x, [[0, 0], [0, pad_amount], [0, 0]])
-        for padding, conv, norm in self.blocks:
-            x = tf.pad(x, [[0, 0], [padding, 0], [0, 0]])
-            x = conv(x)
-            x = norm(x)
+        for i in range(self._n):
+            x = tf.pad(x, [[0, 0], [self._paddings[i], 0], [0, 0]])
+            x = getattr(self, f'conv_{i}')(x)
+            x = getattr(self, f'norm_{i}')(x)
             x = tf.nn.gelu(x)
         return self.proj(x)
 
@@ -77,12 +78,11 @@ class MelDetokenizer(tf.keras.layers.Layer):
             D_MODEL - (D_MODEL - N_MELS) * (i + 1) // n
             for i in range(n)
         ]
-        self.blocks = []
         for i in range(n):
-            up = tf.keras.layers.UpSampling1D(size=2, name=f'up_{i}')
-            conv = CausalConv1D(filters[i], kernel_size=3, name=f'conv_{i}')
-            norm = tf.keras.layers.LayerNormalization(name=f'norm_{i}')
-            self.blocks.append((up, conv, norm))
+            setattr(self, f'up_{i}', tf.keras.layers.UpSampling1D(size=2, name=f'up_{i}'))
+            setattr(self, f'conv_{i}', CausalConv1D(filters[i], kernel_size=3, name=f'conv_{i}'))
+            setattr(self, f'norm_{i}', tf.keras.layers.LayerNormalization(name=f'norm_{i}'))
+        self._n = n
         self.proj = tf.keras.layers.Dense(N_MELS, name='proj')
 
     def call(self, x, target_length=None, training=False):
@@ -94,10 +94,10 @@ class MelDetokenizer(tf.keras.layers.Layer):
         Returns:
             [B, T_tok * TOKEN_COMPRESSION_RATIO, N_MELS] or [B, target_length, N_MELS]
         """
-        for up, conv, norm in self.blocks:
-            x = up(x)
-            x = conv(x)
-            x = norm(x)
+        for i in range(self._n):
+            x = getattr(self, f'up_{i}')(x)
+            x = getattr(self, f'conv_{i}')(x)
+            x = getattr(self, f'norm_{i}')(x)
             x = tf.nn.gelu(x)
         x = self.proj(x)
         if target_length is not None:
@@ -133,7 +133,8 @@ class LatentEncoder(tf.keras.Model):
         x = self.dense(x)
         z_mean = self.z_mean_head(x)
         z_logvar = self.z_logvar_head(x)
-        eps = tf.random.normal(tf.shape(z_mean))
+        seed = tf.cast(tf.reduce_sum(mel * 1e6), tf.int32)
+        eps = tf.random.stateless_normal(tf.shape(z_mean), seed=[seed, 0])
         z = z_mean + tf.exp(0.5 * z_logvar) * eps
         return z, z_mean, z_logvar
 
@@ -153,8 +154,9 @@ class MelGenerator(tf.keras.Model):
     Supports both parallel forward pass (training) and autoregressive generation (inference).
     """
     
-    def __init__(self, **kwargs):
+    def __init__(self, use_pose=False, **kwargs):
         super().__init__(**kwargs)
+        self.use_pose = use_pose
         
         import logging
         
@@ -191,16 +193,17 @@ class MelGenerator(tf.keras.Model):
         # Token-space projection head for forward_tokens()
         self.projection_head = tf.keras.layers.Dense(D_MODEL, name='projection_head')
         
-        # Pose conditioning
-        self.pose_encoder = build_temporal_pose_encoder(
-            input_dim=POSE_FEATURE_DIM, output_dim=POSE_EMBEDDING_DIM
-        )
-        self.pose_proj = tf.keras.layers.Dense(D_MODEL, name='pose_proj')
-        self.pose_stride_conv = tf.keras.layers.Conv1D(
-            D_MODEL, kernel_size=TOKEN_COMPRESSION_RATIO,
-            strides=TOKEN_COMPRESSION_RATIO, padding='same', name='pose_stride_conv'
-        )
-        self.pose_alpha = tf.Variable(0.0, trainable=False, dtype=tf.float32, name='pose_alpha')
+        # Pose conditioning (only built when needed)
+        if self.use_pose:
+            self.pose_encoder = build_temporal_pose_encoder(
+                input_dim=POSE_FEATURE_DIM, output_dim=POSE_EMBEDDING_DIM
+            )
+            self.pose_proj = tf.keras.layers.Dense(D_MODEL, name='pose_proj')
+            self.pose_stride_conv = tf.keras.layers.Conv1D(
+                D_MODEL, kernel_size=TOKEN_COMPRESSION_RATIO,
+                strides=TOKEN_COMPRESSION_RATIO, padding='same', name='pose_stride_conv'
+            )
+            self.pose_alpha = tf.Variable(0.0, trainable=False, dtype=tf.float32, name='pose_alpha')
     
     def call(self, mel, z=None, pose=None, training=False):
         """Forward pass (parallel processing for training).
@@ -253,8 +256,9 @@ class MelGenerator(tf.keras.Model):
             x = conv(x, training=training)
         
         x = self.transformer1(x)
-        x = self.transformer2(x, cross_attn_kv=pose_embedded, cross_attn_alpha=self.pose_alpha)
-        x = self.transformer3(x, cross_attn_kv=pose_embedded, cross_attn_alpha=self.pose_alpha)
+        alpha = self.pose_alpha if self.use_pose else 0.0
+        x = self.transformer2(x, cross_attn_kv=pose_embedded, cross_attn_alpha=alpha)
+        x = self.transformer3(x, cross_attn_kv=pose_embedded, cross_attn_alpha=alpha)
         
         return self.projection_head(x)
     

@@ -34,7 +34,7 @@ def phase1_weights_path():
 @pytest.fixture
 def phase2_model():
     """Build a Phase 2 (pose-conditioned) model."""
-    base = MelGenerator()
+    base = MelGenerator(use_pose=True)
     wrapper = PoseConditionedTraining(base)
     wrapper.compile(optimizer='adam')
     x = tf.random.normal([1, 64, N_MELS])

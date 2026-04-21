@@ -10,7 +10,7 @@ from .config import (
     DATA_DIR, CACHE_DIR, CHECKPOINT_DIR,
     BATCH_SIZE, SEQ_LEN, LEARNING_RATE, NUM_EPOCHS,
     INITIAL_TF_RATIO, MIN_TF_RATIO, TF_DECAY_K, TF_WARMUP_STEPS,
-    N_MELS, KL_BETA
+    N_MELS, KL_BETA, LR_WARMUP_STEPS
 )
 from .dataset import create_dataset
 from .model import MelGenerator, MelTokenizer, MelDetokenizer, LatentEncoder
@@ -183,40 +183,24 @@ class MelGeneratorTraining(tf.keras.Model):
         """KL divergence: KL(q(z|x) || N(0,1))."""
         return -0.5 * tf.reduce_mean(1.0 + z_logvar - tf.square(z_mean) - tf.exp(z_logvar))
 
-    def _pure_teacher_forcing(self, x, y):
-        """Single forward pass with ground truth. Direct MSE on raw mel."""
-        with tf.GradientTape() as tape:
-            z, z_mean, z_logvar = self.latent_encoder(x, training=True)
-            preds = self.base_model(x, z=z, training=True)
-            
-            mel_loss = tf.reduce_mean(tf.square(preds - y))
-            kl_loss = self._compute_kl_loss(z_mean, z_logvar)
-            loss = mel_loss + self.kl_beta * kl_loss
+    def train_step(self, data):
+        """Training step: always routes through tokenizer for consistent gradients."""
+        self.update_tf_ratio()
         
-        trainable_vars = self.base_model.trainable_variables + self.latent_encoder.trainable_variables
-        grads = tape.gradient(loss, trainable_vars)
-        grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
-        self.optimizer.apply_gradients(zip(grads, trainable_vars))
-        self.tf_ratio_metric.update_state(self.tf_ratio)
-        self.mel_loss_metric.update_state(mel_loss)
-        self.kl_loss_metric.update_state(kl_loss)
+        x, y = data
+        tf.debugging.assert_equal(tf.shape(x), tf.shape(y))
         
-        return {"loss": loss, "mel_loss": self.mel_loss_metric.result(), "kl_loss": self.kl_loss_metric.result(),
-                "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
-    
-    def _parallel_scheduled_sampling(self, x, y):
-        """Two-pass parallel scheduled sampling in token space."""
-        # Pass 1: Get predicted tokens via forward_tokens (no mel roundtrip)
+        # Pass 1 (detached): get predicted tokens for scheduled sampling mix
         z_pass1, _, _ = self.latent_encoder(x, training=False)
         gt_tokens_detached = self.base_model.tokenizer(x, training=False)
         pred_tokens = self.base_model.forward_tokens(gt_tokens_detached, z=z_pass1, training=False)
-        
-        # Mix in token space (stop_gradient so pass 1 stays detached)
         pred_tokens_shifted = tf.concat([gt_tokens_detached[:, :1, :], pred_tokens[:, :-1, :]], axis=1)
+        
+        # Mix in token space
         tok_seq_len = tf.shape(gt_tokens_detached)[1]
         use_teacher = tf.random.uniform([tf.shape(x)[0], tok_seq_len, 1]) < self.tf_ratio
         
-        # Pass 2: Re-tokenize inside tape so tokenizer gets gradients
+        # Pass 2 (gradient-tracked): tokenizer stays in graph
         with tf.GradientTape() as tape:
             z, z_mean, z_logvar = self.latent_encoder(x, training=True)
             gt_tokens = self.base_model.tokenizer(x, training=True)
@@ -235,22 +219,11 @@ class MelGeneratorTraining(tf.keras.Model):
         self.mel_loss_metric.update_state(mel_loss)
         self.kl_loss_metric.update_state(kl_loss)
         
-        return {"loss": loss, "mel_loss": self.mel_loss_metric.result(), "kl_loss": self.kl_loss_metric.result(),
-                "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result()}
-    
-    def train_step(self, data):
-        """Training step with parallel processing."""
-        self.update_tf_ratio()
+        lr = self.optimizer.learning_rate
+        current_lr = lr(self.optimizer.iterations) if callable(lr) else lr
         
-        x, y = data
-        tf.debugging.assert_equal(tf.shape(x), tf.shape(y))
-        
-        # Choose training path using tf.cond for graph mode compatibility
-        return tf.cond(
-            self.tf_ratio >= 0.99,
-            lambda: self._pure_teacher_forcing(x, y),
-            lambda: self._parallel_scheduled_sampling(x, y)
-        )
+        return {"0: loss": loss, "1: mel_loss": self.mel_loss_metric.result(), "2: kl_loss": self.kl_loss_metric.result(),
+                "3: lr": current_lr, "4: grad_norm": grad_norm, "5: tf_ratio": self.tf_ratio_metric.result()}
 
 
 def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_from=None):
@@ -273,7 +246,8 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
     
     total_steps = steps_per_epoch * epochs
     
-    lr_schedule = WarmupCosineSchedule(lr, warmup_steps=5 * steps_per_epoch, total_steps=total_steps)
+    warmup_steps = LR_WARMUP_STEPS
+    lr_schedule = WarmupCosineSchedule(lr, warmup_steps=warmup_steps, total_steps=total_steps)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule, clipnorm=0.5)
     
     base_model = MelGenerator()
@@ -300,53 +274,50 @@ def train(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr, resume_fr
     
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / "mel_generator.keras"
     
-    resume_path = resume_from or (str(checkpoint_path) if checkpoint_path.exists() else None)
-    if resume_path:
-        print(f"Resuming from {resume_path}")
-        if resume_path.endswith('.keras'):
-            custom_objs = {
-                'MelGeneratorTraining': MelGeneratorTraining,
-                'WarmupCosineSchedule': WarmupCosineSchedule,
-                'MelGenerator': MelGenerator,
-                'MelTokenizer': MelTokenizer,
-                'MelDetokenizer': MelDetokenizer,
-                'LatentEncoder': LatentEncoder,
-                'CausalConv1D': CausalConv1D,
-                'CausalConvBlock': CausalConvBlock,
-                'LocalWindowAttention': LocalWindowAttention,
-                'TransformerBlock': TransformerBlock,
-            }
-            with tf.keras.utils.custom_object_scope(custom_objs):
-                model = tf.keras.models.load_model(resume_path)
-            # Override schedule params with current config values
-            model.decay_k = TF_DECAY_K
-            model.min_tf_ratio = MIN_TF_RATIO
-            print(f"✓ Full model loaded (weights + optimizer state, decay_k={TF_DECAY_K})")
+    # Verify weight serialization round-trips correctly
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = str(Path(tmpdir) / "verify.weights.h5")
+        base_model.save_weights(tmp_path)
+        base_model_verify = MelGenerator()
+        for x, y in dataset.take(1):
+            _ = base_model_verify(x, training=False)
+        base_model_verify.load_weights(tmp_path)
+        for w1, w2 in zip(base_model.weights, base_model_verify.weights):
+            assert tf.reduce_all(tf.equal(w1, w2)).numpy(), f"Weight round-trip failed: {w1.name}"
+    print(f"✓ Weight serialization verified ({len(base_model.weights)} weights round-tripped)")
+    
+    base_weights = checkpoint_dir / "base_model.weights.h5"
+    latent_weights = checkpoint_dir / "latent_encoder.weights.h5"
+    
+    if resume_from or base_weights.exists():
+        if resume_from:
+            print(f"Resuming from {resume_from}")
+            model.load_weights(str(resume_from), skip_mismatch=True)
         else:
-            model.load_weights(str(resume_path))
-            print("✓ Weights loaded (no optimizer state)")
+            print(f"Resuming from {checkpoint_dir}")
+            model.base_model.load_weights(str(base_weights))
+            model.latent_encoder.load_weights(str(latent_weights))
+        print(f"✓ Weights loaded (fresh optimizer with {warmup_steps}-step warmup)")
     
+    class ModelOnlyCheckpoint(tf.keras.callbacks.Callback):
+        """Save only model weights (no optimizer state)."""
+        def __init__(self, base_path):
+            self.base_path = Path(base_path)
+
+        def on_epoch_end(self, epoch, logs=None):
+            self.model.base_model.save_weights(str(self.base_path / "base_model.weights.h5"))
+            self.model.latent_encoder.save_weights(str(self.base_path / "latent_encoder.weights.h5"))
+            print(f"\n✓ Weights saved to {self.base_path}")
+
     callbacks = [
-        tf.keras.callbacks.ModelCheckpoint(str(checkpoint_path), save_weights_only=False, save_freq='epoch'),
+        ModelOnlyCheckpoint(checkpoint_dir),
         tf.keras.callbacks.TensorBoard(log_dir=checkpoint_dir / "logs"),
     ]
     
     model.fit(dataset, epochs=epochs, steps_per_epoch=steps_per_epoch, callbacks=callbacks)
-    
-    # Validate checkpoint was saved
-    print("Validating checkpoint...")
-    if checkpoint_path.exists():
-        print(f"✓ Checkpoint saved successfully: {checkpoint_path}")
-        size = checkpoint_path.stat().st_size if checkpoint_path.is_file() else sum(
-            f.stat().st_size for f in checkpoint_path.rglob('*') if f.is_file())
-        print(f"  Checkpoint size: {size / (1024*1024):.2f} MB")
-    else:
-        print(f"✗ Checkpoint not found at {checkpoint_path}")
-        raise FileNotFoundError(f"Expected checkpoint at {checkpoint_path}")
-    
-    print(f"Training complete. Model saved to {checkpoint_path}")
+    print(f"Training complete. Weights saved to {checkpoint_dir}")
 
 
 def main():

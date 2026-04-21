@@ -10,19 +10,8 @@ from .config import (
     N_MELS,
     FRAME_LENGTH,
     FRAME_STEP,
-    VOCOS_SAMPLE_RATE,
-    VOCOS_HOP_LENGTH,
-    VOCOS_N_FFT,
-    VOCOS_N_MELS,
-    VOCOS_F_MIN,
-    VOCOS_F_MAX,
-    # Legacy aliases
-    LJSPEECH_SAMPLE_RATE,
-    LJSPEECH_HOP_LENGTH,
-    LJSPEECH_N_FFT,
-    LJSPEECH_N_MELS,
-    LJSPEECH_F_MIN,
-    LJSPEECH_F_MAX,
+    F_MIN,
+    F_MAX,
 )
 
 
@@ -71,17 +60,17 @@ def audio_to_mel(waveform: tf.Tensor) -> tf.Tensor:
         2D tensor of shape [time, n_mels] containing log-mel spectrogram
     """
     stft = tf.signal.stft(waveform, FRAME_LENGTH, FRAME_STEP, pad_end=True)
-    magnitude = tf.abs(stft)
+    power = tf.abs(stft) ** 2
     
     mel_matrix = tf.signal.linear_to_mel_weight_matrix(
         num_mel_bins=N_MELS,
         num_spectrogram_bins=FRAME_LENGTH // 2 + 1,
         sample_rate=SAMPLE_RATE,
-        lower_edge_hertz=0.0,
-        upper_edge_hertz=12000.0
+        lower_edge_hertz=F_MIN,
+        upper_edge_hertz=F_MAX
     )
     
-    mel = tf.matmul(magnitude, mel_matrix)
+    mel = tf.matmul(power, mel_matrix)
     log_mel = tf.math.log(mel + 1e-8)
     
     return log_mel
@@ -121,40 +110,6 @@ def denormalize_mel(mel: tf.Tensor, mean: float, std: float) -> tf.Tensor:
         Denormalized mel spectrogram
     """
     return mel * std + mean
-
-
-def audio_to_mel_ljspeech(waveform: tf.Tensor) -> tf.Tensor:
-    """Convert audio to mel using Vocos-compatible parameters.
-    
-    Uses TensorFlow signal processing with Vocos 24kHz parameters
-    for compatibility with pretrained Vocos vocoder.
-    
-    Args:
-        waveform: 1D tensor of audio samples at 24000 Hz
-        
-    Returns:
-        2D tensor [time, n_mels] (time_frames x 100)
-    """
-    stft = tf.signal.stft(
-        waveform,
-        frame_length=VOCOS_N_FFT,
-        frame_step=VOCOS_HOP_LENGTH,
-        pad_end=True
-    )
-    magnitude = tf.abs(stft)
-    
-    mel_matrix = tf.signal.linear_to_mel_weight_matrix(
-        num_mel_bins=VOCOS_N_MELS,
-        num_spectrogram_bins=VOCOS_N_FFT // 2 + 1,
-        sample_rate=VOCOS_SAMPLE_RATE,
-        lower_edge_hertz=VOCOS_F_MIN,
-        upper_edge_hertz=VOCOS_F_MAX
-    )
-    
-    mel = tf.matmul(magnitude, mel_matrix)
-    log_mel = tf.math.log(mel + 1e-8)
-    
-    return log_mel
 
 
 class MelNormalizer:

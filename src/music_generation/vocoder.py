@@ -40,9 +40,10 @@ class GriffinLimVocoder:
         mel_np = mel.numpy()
         
         # Handle shape: ensure [batch, mel_bins, time]
-        if mel_np.ndim == 3 and mel_np.shape[2] == 100:
-            # [batch, time, 80] -> [batch, 80, time]
-            mel_np = np.transpose(mel_np, (0, 2, 1))
+        # Input is [batch, time, mel_bins] — always transpose since time > mel_bins in practice
+        if mel_np.ndim == 3 and mel_np.shape[1] != mel_np.shape[2]:
+            if mel_np.shape[2] < mel_np.shape[1]:
+                mel_np = np.transpose(mel_np, (0, 2, 1))
         
         # Convert mel to linear spectrogram and apply Griffin-Lim
         audio_list = []
@@ -51,12 +52,12 @@ class GriffinLimVocoder:
             # Convert from log mel to linear mel
             mel_linear = np.exp(mel_frame)
             
-            # Convert mel to STFT magnitude
+            # Convert mel to STFT magnitude (power=2.0 matches power spectrogram input)
             stft = librosa.feature.inverse.mel_to_stft(
                 mel_linear,
                 sr=24000,
                 n_fft=self.n_fft,
-                power=1.0
+                power=2.0
             )
             
             # Apply Griffin-Lim
@@ -153,7 +154,7 @@ class HiFiGANVocoder(tf.keras.Model):
 
 
 def load_pretrained_vocoder(
-    backend: str = "hifigan",
+    backend: str = "vocos",
     model_name: Optional[str] = None,
     enable_fallback: bool = True
 ):
@@ -290,7 +291,7 @@ class VocoderDataset:
             audio_segment = tf.pad(audio, [[0, padding]])
         
         # Compute mel using LJSpeech parameters
-        mel = audio_utils.audio_to_mel_ljspeech(audio_segment)
+        mel = audio_utils.audio_to_mel(audio_segment)
         
         return mel, audio_segment
     

@@ -47,7 +47,7 @@ class VocosWrapper:
         mel_np = mel.numpy()
         
         # Vocos expects [batch, 100, time]
-        if mel_np.shape[-1] == 100:
+        if mel_np.ndim == 3 and mel_np.shape[1] != 100 and mel_np.shape[2] == 100:
             mel_np = np.transpose(mel_np, (0, 2, 1))
         
         # Convert to PyTorch

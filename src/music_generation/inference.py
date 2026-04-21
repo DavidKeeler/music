@@ -41,9 +41,9 @@ class MusicGenerationModel(tf.keras.Model):
         """
         mel = self.mel_generator(inputs, training=training)
         
-        # Normalize if normalizer provided
+        # Denormalize if normalizer provided (model outputs normalized mels)
         if self.normalizer is not None:
-            mel = self.normalizer.normalize(mel)
+            mel = self.normalizer.denormalize(mel)
         
         audio = self.vocoder(mel, training=training)
         return audio
@@ -77,9 +77,9 @@ class MusicGenerationModel(tf.keras.Model):
         # Transform to vocoder format: [num_frames, 80] -> [1, num_frames, 80]
         mel_for_vocoder = tf.expand_dims(generated_mel, 0)
         
-        # Normalize if normalizer provided
+        # Denormalize if normalizer provided (model outputs normalized mels)
         if self.normalizer is not None:
-            mel_for_vocoder = self.normalizer.normalize(mel_for_vocoder)
+            mel_for_vocoder = self.normalizer.denormalize(mel_for_vocoder)
         
         # Decode to audio
         audio = self.vocoder(mel_for_vocoder, training=False)  # [1, samples]
@@ -92,9 +92,10 @@ class MusicGenerationModel(tf.keras.Model):
         cls,
         mel_checkpoint: str,
         vocoder_checkpoint: str = None,
-        vocoder_backend: str = "hifigan",
+        vocoder_backend: str = "vocos",
         normalizer: MelNormalizer = None,
-        enable_fallback: bool = True
+        enable_fallback: bool = True,
+        use_pose: bool = False
     ) -> "MusicGenerationModel":
         """Load from checkpoint files.
         
@@ -104,6 +105,7 @@ class MusicGenerationModel(tf.keras.Model):
             vocoder_backend: Vocoder backend ("hifigan", "vocos", "griffin-lim")
             normalizer: Optional mel normalizer
             enable_fallback: Enable automatic fallback to other backends
+            use_pose: Whether model was trained with pose conditioning
             
         Returns:
             Initialized MusicGenerationModel
@@ -111,7 +113,7 @@ class MusicGenerationModel(tf.keras.Model):
         # Load mel generator
         mel_checkpoint_path = Path(mel_checkpoint)
         if mel_checkpoint_path.suffix == '.h5':
-            mel_generator = MelGenerator()
+            mel_generator = MelGenerator(use_pose=use_pose)
             mel_generator.load_weights(str(mel_checkpoint))
         else:
             mel_generator = tf.keras.models.load_model(str(mel_checkpoint))

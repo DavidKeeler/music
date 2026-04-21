@@ -17,21 +17,11 @@ FRAME_LENGTH = 1024
 # STFT hop length in samples (256 samples = ~10.7ms at 24kHz)
 FRAME_STEP = 256
 
-# Vocos Mel Parameters (for pretrained vocoder compatibility)
-VOCOS_SAMPLE_RATE = 24000
-VOCOS_HOP_LENGTH = 256
-VOCOS_N_FFT = 1024
-VOCOS_N_MELS = 100
-VOCOS_F_MIN = 0.0
-VOCOS_F_MAX = 12000.0
-
-# Legacy LJSpeech aliases (kept for any remaining references)
-LJSPEECH_SAMPLE_RATE = VOCOS_SAMPLE_RATE
-LJSPEECH_HOP_LENGTH = VOCOS_HOP_LENGTH
-LJSPEECH_N_FFT = VOCOS_N_FFT
-LJSPEECH_N_MELS = VOCOS_N_MELS
-LJSPEECH_F_MIN = VOCOS_F_MIN
-LJSPEECH_F_MAX = VOCOS_F_MAX
+# Mel Frequency Parameters
+# Minimum frequency for mel filterbank
+F_MIN = 0.0
+# Maximum frequency for mel filterbank
+F_MAX = 12000.0
 
 # Vocoder Training Parameters
 VOCODER_SEGMENT_LENGTH = 8192
@@ -85,6 +75,9 @@ TOKEN_SEQ_LEN = SEQ_LEN // TOKEN_COMPRESSION_RATIO  # 512 // 4 = 128
 POSE_FEATURE_DIM = 85
 POSE_EMBEDDING_DIM = 128
 
+# Learning rate warmup steps before cosine decay
+LR_WARMUP_STEPS = 500
+
 # Teacher Forcing Schedule Parameters
 # Initial teacher forcing ratio (1.0 = always use ground truth)
 INITIAL_TF_RATIO = 1.0
@@ -93,7 +86,7 @@ MIN_TF_RATIO = 0.05
 # Exponential decay rate (k in ε(step) = max(ε_min, ε_initial * exp(-k * step)))
 TF_DECAY_K = 7e-7
 # Warmup steps before decay starts (ratio stays at INITIAL_TF_RATIO)
-TF_WARMUP_STEPS = 50000
+TF_WARMUP_STEPS = 100000
 
 # Inference Parameters
 # Temperature for sampling (1.0 = no scaling)

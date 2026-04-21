@@ -105,36 +105,27 @@ class PoseConditionedTraining(tf.keras.Model):
         pose_embedded = self.base_model.pose_stride_conv(pose_embedded)
         return apply_conditioning_dropout(pose_embedded, self.cond_dropout_rate)
 
-    def _pure_teacher_forcing(self, x, y, pose_embedded):
-        with tf.GradientTape() as tape:
-            z, z_mean, z_logvar = self.latent_encoder(x, training=True)
-            tokens = self.base_model.tokenizer(x, training=True)
-            token_preds = self.base_model.forward_tokens(tokens, z=z, pose_embedded=pose_embedded, training=True)
-            preds = self.base_model.detokenizer(token_preds, target_length=tf.shape(x)[1], training=True)
+    def _update_metrics(self, mel_loss, kl_loss):
+        self.mel_loss_metric.update_state(mel_loss)
+        self.kl_loss_metric.update_state(kl_loss)
+        self.tf_ratio_metric.update_state(self.tf_ratio)
+        self.alpha_metric.update_state(self.base_model.pose_alpha)
 
-            mel_loss = tf.reduce_mean(tf.square(preds - y))
-            kl_loss = self._compute_kl_loss(z_mean, z_logvar)
-            loss = mel_loss + self.kl_beta * kl_loss
+    def train_step(self, data):
+        self._update_schedules()
+        x, y, pose = data
+        pose_embedded = self._encode_pose(pose)
 
-        trainable_vars = self.base_model.trainable_variables + self.latent_encoder.trainable_variables
-        grads = tape.gradient(loss, trainable_vars)
-        grad_norm = tf.sqrt(tf.reduce_sum([tf.reduce_sum(tf.square(g)) for g in grads if g is not None]))
-        self.optimizer.apply_gradients(zip(grads, trainable_vars))
-        self._update_metrics(mel_loss, kl_loss)
-        return {"loss": loss, "mel_loss": self.mel_loss_metric.result(), "kl_loss": self.kl_loss_metric.result(),
-                "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result(), "alpha": self.alpha_metric.result()}
-
-    def _parallel_scheduled_sampling(self, x, y, pose_embedded):
-        # Pass 1: predictions (detached)
+        # Pass 1 (detached): get predicted tokens for scheduled sampling mix
         z_pass1, _, _ = self.latent_encoder(x, training=False)
         gt_tokens_detached = self.base_model.tokenizer(x, training=False)
         pred_tokens = self.base_model.forward_tokens(gt_tokens_detached, z=z_pass1, pose_embedded=pose_embedded, training=False)
-
         pred_tokens_shifted = tf.concat([gt_tokens_detached[:, :1, :], pred_tokens[:, :-1, :]], axis=1)
+
         tok_seq_len = tf.shape(gt_tokens_detached)[1]
         use_teacher = tf.random.uniform([tf.shape(x)[0], tok_seq_len, 1]) < self.tf_ratio
 
-        # Pass 2: train
+        # Pass 2 (gradient-tracked): tokenizer stays in graph
         with tf.GradientTape() as tape:
             z, z_mean, z_logvar = self.latent_encoder(x, training=True)
             gt_tokens = self.base_model.tokenizer(x, training=True)
@@ -152,23 +143,6 @@ class PoseConditionedTraining(tf.keras.Model):
         self._update_metrics(mel_loss, kl_loss)
         return {"loss": loss, "mel_loss": self.mel_loss_metric.result(), "kl_loss": self.kl_loss_metric.result(),
                 "grad_norm": grad_norm, "tf_ratio": self.tf_ratio_metric.result(), "alpha": self.alpha_metric.result()}
-
-    def _update_metrics(self, mel_loss, kl_loss):
-        self.mel_loss_metric.update_state(mel_loss)
-        self.kl_loss_metric.update_state(kl_loss)
-        self.tf_ratio_metric.update_state(self.tf_ratio)
-        self.alpha_metric.update_state(self.base_model.pose_alpha)
-
-    def train_step(self, data):
-        self._update_schedules()
-        x, y, pose = data
-        pose_embedded = self._encode_pose(pose)
-
-        return tf.cond(
-            self.tf_ratio >= 0.99,
-            lambda: self._pure_teacher_forcing(x, y, pose_embedded),
-            lambda: self._parallel_scheduled_sampling(x, y, pose_embedded),
-        )
 
     def get_config(self):
         return {
@@ -312,7 +286,7 @@ def train_pose(data_dir, cache_dir, checkpoint_dir, batch_size, epochs, lr,
     lr_schedule = WarmupCosineSchedule(lr, warmup_steps=5 * steps_per_epoch, total_steps=total_steps)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule, clipnorm=0.5)
 
-    base_model = MelGenerator()
+    base_model = MelGenerator(use_pose=True)
     model = PoseConditionedTraining(
         base_model, alpha_start=alpha_start, alpha_end=alpha_end,
         alpha_steps=alpha_steps, cond_dropout_rate=cond_dropout,
